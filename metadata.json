@@ -1,0 +1,7 @@
+{
+  "name": "Asesmen Kontekstual – Open Book & Critical Thinking",
+  "description": "Aplikasi untuk guru SD dan SMP untuk membuat asesmen kontekstual berbasis masalah, data, dan bukti yang dikerjakan secara open-book dengan penalaran kritis.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
