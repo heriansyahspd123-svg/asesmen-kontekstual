@@ -35,6 +35,7 @@ import {
 import { Assessment, StudentAnswer, StudentSubmission, IntegrityIncident } from '../types';
 import { fetchAssessmentByCodeOrId, buildStudentShareUrl } from '../utils/storage';
 import { ShareStudentLinkModal } from './ShareStudentLinkModal';
+import { DataChartViewer } from './DataChartViewer';
 
 interface AutoSaveDraft {
   assessmentId: string;
@@ -400,6 +401,33 @@ export const StudentMode: React.FC<StudentModeProps> = ({
         [field]: value
       }
     }));
+  };
+
+  const handleCiteDataToEvidence = (citeText: string) => {
+    if (!selectedAssessment) return;
+    const qId = selectedAssessment.questions[currentQIndex]?.id;
+    if (!qId) return;
+
+    setAnswers(prev => {
+      const currentAns = prev[qId] || {
+        questionId: qId,
+        jawabanSaya: '',
+        buktiDigunakan: '',
+        alasanSaya: '',
+        refleksiSaya: ''
+      };
+      const curr = currentAns.buktiDigunakan || '';
+      const formatted = curr.trim() 
+        ? `${curr.trim()}\n[Kutipan Data/Grafik]: ${citeText}` 
+        : `[Kutipan Data/Grafik]: ${citeText}`;
+      return {
+        ...prev,
+        [qId]: {
+          ...currentAns,
+          buktiDigunakan: formatted
+        }
+      };
+    });
   };
 
   const handlePasteDetection = (fieldKey: keyof StudentAnswer, fieldLabel: string, e: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -1052,8 +1080,16 @@ export const StudentMode: React.FC<StudentModeProps> = ({
               {currentQ.dataInformasi.konten}
             </p>
 
-            {/* Table Rendering */}
-            {currentQ.dataInformasi.tabelData && (
+            {/* Visualisasi Grafik Nyata Siswa (Bar / Line / Pie / Area) */}
+            {currentQ.dataInformasi.visualisasiGrafik && (
+              <DataChartViewer
+                grafik={currentQ.dataInformasi.visualisasiGrafik}
+                onCiteData={handleCiteDataToEvidence}
+              />
+            )}
+
+            {/* Table Rendering (shown if no visualisasiGrafik or fallback) */}
+            {currentQ.dataInformasi.tabelData && !currentQ.dataInformasi.visualisasiGrafik && (
               <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
                 <table className="w-full text-xs text-left">
                   <thead className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold border-b border-slate-200 dark:border-slate-700">

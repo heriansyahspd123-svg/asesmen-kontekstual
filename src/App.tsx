@@ -14,7 +14,9 @@ import {
   getSavedAssessments, 
   saveAssessment, 
   getSavedSubmissions, 
-  saveSubmission 
+  saveSubmission,
+  syncAssessmentsWithServer,
+  syncSubmissionsWithServer
 } from './utils/storage';
 
 export default function App() {
@@ -40,6 +42,18 @@ export default function App() {
     const loadedSubmissions = getSavedSubmissions();
     setAssessments(loadedAssessments);
     setSubmissions(loadedSubmissions);
+
+    // Sync with server in background to support students opening on new devices
+    syncAssessmentsWithServer().then(synced => {
+      if (synced && synced.length > 0) {
+        setAssessments(synced);
+      }
+    });
+    syncSubmissionsWithServer().then(synced => {
+      if (synced && synced.length > 0) {
+        setSubmissions(synced);
+      }
+    });
 
     try {
       const urlParams = new URLSearchParams(window.location.search);

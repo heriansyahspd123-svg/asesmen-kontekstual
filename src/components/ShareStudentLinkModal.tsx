@@ -17,10 +17,16 @@ import {
   Check,
   Clock,
   BookOpen,
-  MessageCircle
+  MessageCircle,
+  Globe,
+  Settings,
+  HelpCircle,
+  Play,
+  AlertTriangle,
+  Info
 } from 'lucide-react';
 import { Assessment } from '../types';
-import { buildStudentShareUrl, buildWhatsAppShareText } from '../utils/storage';
+import { buildStudentShareUrl, buildWhatsAppShareText, getPublicShareOrigin } from '../utils/storage';
 
 interface ShareStudentLinkModalProps {
   assessment: Assessment | null;
@@ -40,12 +46,29 @@ export const ShareStudentLinkModal: React.FC<ShareStudentLinkModalProps> = ({
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [isQrFullscreen, setIsQrFullscreen] = useState<boolean>(false);
+  const [linkMode, setLinkMode] = useState<'public' | 'current' | 'custom'>('public');
+  const [customOrigin, setCustomOrigin] = useState<string>(() => {
+    try {
+      return localStorage.getItem('custom_share_origin') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [showTroubleshoot, setShowTroubleshoot] = useState<boolean>(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const shareUrl = assessment ? buildStudentShareUrl(assessment) : '';
-  const waText = assessment ? buildWhatsAppShareText(assessment) : '';
+  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+  const publicOrigin = getPublicShareOrigin();
+  const isAisDev = currentOrigin.includes('ais-dev-');
 
-  // Generate QR Code when modal opens or assessment changes (always call hook unconditionally)
+  const effectiveOrigin = linkMode === 'public' 
+    ? publicOrigin 
+    : (linkMode === 'current' ? currentOrigin : (customOrigin.trim() || publicOrigin));
+
+  const shareUrl = assessment ? buildStudentShareUrl(assessment, effectiveOrigin) : '';
+  const waText = assessment ? buildWhatsAppShareText(assessment, effectiveOrigin) : '';
+
+  // Generate QR Code when modal opens or assessment/shareUrl changes
   useEffect(() => {
     if (!isOpen || !assessment || !shareUrl) return;
     try {
@@ -90,6 +113,41 @@ export const ShareStudentLinkModal: React.FC<ShareStudentLinkModalProps> = ({
     const encoded = encodeURIComponent(waText);
     const waUrl = `https://api.whatsapp.com/send?text=${encoded}`;
     window.open(waUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleOpenTestLink = () => {
+    window.open(shareUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleDirectTestNow = () => {
+    if (onTestNow && assessment) {
+      onTestNow(assessment.id);
+    } else {
+      window.location.href = `/?view=student&code=${encodeURIComponent(assessment.kodeAkses)}`;
+    }
+  };
+
+  const handleSaveCustomOrigin = (val: string) => {
+    setCustomOrigin(val);
+    try {
+      if (val.trim()) {
+        localStorage.setItem('custom_share_origin', val.trim());
+      } else {
+        localStorage.removeItem('custom_share_origin');
+      }
+    } catch {
+      // Ignore
+    }
+  };
+
+  const handleResetToPublic = () => {
+    setCustomOrigin('');
+    setLinkMode('public');
+    try {
+      localStorage.removeItem('custom_share_origin');
+    } catch {
+      // Ignore
+    }
   };
 
   const handleDownloadQr = () => {
@@ -211,6 +269,114 @@ export const ShareStudentLinkModal: React.FC<ShareStudentLinkModalProps> = ({
             </div>
           </div>
 
+          {/* Quick Action: Direct Test Button */}
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-md flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="space-y-0.5 text-center sm:text-left">
+              <div className="flex items-center justify-center sm:justify-start gap-1.5 font-bold text-sm">
+                <Play className="w-4 h-4 fill-white" />
+                <span>Uji Langsung Lembar Soal Siswa</span>
+              </div>
+              <p className="text-xs text-emerald-100">
+                Buka dan coba kerjakan asesmen ini langsung di aplikasi tanpa perlu membuka link eksternal.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleDirectTestNow}
+              className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-white hover:bg-emerald-50 text-emerald-800 font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer shrink-0"
+            >
+              <Play className="w-3.5 h-3.5 fill-emerald-800" />
+              <span>Kerjakan Sekarang (Mode Siswa)</span>
+            </button>
+          </div>
+
+          {/* Link Type Selector & Status */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                <Globe className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span>Pilih Jenis Tautan Pengerjaan:</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowTroubleshoot(!showTroubleshoot)}
+                className="text-[11px] text-amber-700 dark:text-amber-400 font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <HelpCircle className="w-3.5 h-3.5" />
+                <span>{showTroubleshoot ? 'Tutup Panduan Error' : 'Panduan Error 403 / 404'}</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-slate-100 dark:bg-slate-800/80 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-700">
+              <button
+                type="button"
+                onClick={() => setLinkMode('public')}
+                className={`p-2.5 rounded-xl text-left text-xs transition-all cursor-pointer flex flex-col gap-0.5 ${
+                  linkMode === 'public'
+                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-bold border border-emerald-500/50'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full ${linkMode === 'public' ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                    Tautan Publik Siswa (ais-pre)
+                  </span>
+                  <span className="text-[10px] bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 rounded font-semibold">
+                    Untuk Siswa
+                  </span>
+                </div>
+                <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400 pl-3.5">
+                  Bebas login akun Google (Aktif via tombol Share di kanan atas AI Studio)
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setLinkMode('current')}
+                className={`p-2.5 rounded-xl text-left text-xs transition-all cursor-pointer flex flex-col gap-0.5 ${
+                  linkMode === 'current'
+                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-bold border border-emerald-500/50'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full ${linkMode === 'current' ? 'bg-amber-500' : 'bg-slate-400'}`} />
+                    Tautan Preview Sesi Ini (ais-dev)
+                  </span>
+                  <span className="text-[10px] bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded font-semibold">
+                    Uji Coba Guru
+                  </span>
+                </div>
+                <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400 pl-3.5">
+                  Langsung dapat dibuka di tab baru laptop Anda saat ini
+                </span>
+              </button>
+            </div>
+
+            {/* Troubleshooting info banner */}
+            {(showTroubleshoot || linkMode === 'public') && (
+              <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-xs space-y-2">
+                <div className="flex items-center gap-2 font-bold text-amber-900 dark:text-amber-300">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>Petunjuk Penting Google AI Studio:</span>
+                </div>
+                <div className="space-y-1.5 text-[11px] text-amber-900/90 dark:text-amber-300/90 leading-relaxed">
+                  <p>
+                    • <strong>Jika muncul <em>"Error: Page not found"</em>:</strong> Tautan publik (<code className="font-mono bg-amber-100 dark:bg-amber-900/60 px-1 rounded">ais-pre</code>) baru dibuat oleh Google Cloud setelah Anda mengklik tombol <strong>"Share" (Bagikan)</strong> di bilah pojok kanan atas Google AI Studio. Cukup klik tombol <strong>Share</strong> satu kali.
+                  </p>
+                  <p>
+                    • <strong>Jika muncul <em>"403 Itu adalah kesalahan"</em>:</strong> Terjadi karena tautan pengembang (<code className="font-mono bg-amber-100 dark:bg-amber-900/60 px-1 rounded">ais-dev</code>) dibuka di HP siswa yang tidak login ke akun Google developer Anda. Pastikan membagikan Tautan Publik setelah Share aktif.
+                  </p>
+                  <p>
+                    • <strong>Alternatif Tercepat:</strong> Klik tombol hijau <strong>"Kerjakan Sekarang (Mode Siswa)"</strong> di atas, atau minta siswa membuka aplikasi dan memasukkan Kode Akses: <strong className="font-mono bg-amber-200/80 dark:bg-amber-900 px-1.5 py-0.5 rounded text-amber-950 dark:text-amber-200">{assessment.kodeAkses}</strong>.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Section 1: Direct Link Input & Actions */}
           <div className="space-y-2.5">
             <div className="flex items-center justify-between">
@@ -249,9 +415,19 @@ export const ShareStudentLinkModal: React.FC<ShareStudentLinkModalProps> = ({
                   </>
                 )}
               </button>
+
+              <button
+                type="button"
+                onClick={handleOpenTestLink}
+                className="px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs border border-slate-300 dark:border-slate-700 flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                title="Buka link ini di tab baru browser untuk menguji tampilan siswa"
+              >
+                <ExternalLink className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span>Uji Buka</span>
+              </button>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              Siswa cukup membuka link ini di peramban Google Chrome HP Android atau Laptop. Soal asesmen dan kode akses otomatis terisi dan siap dikerjakan.
+              Siswa cukup membuka tautan ini di browser Google Chrome HP Android atau Laptop. Soal asesmen dan kode akses otomatis terisi dan siap dikerjakan secara langsung.
             </p>
           </div>
 

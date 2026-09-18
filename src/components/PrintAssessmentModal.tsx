@@ -201,6 +201,25 @@ export const PrintAssessmentModal: React.FC<PrintAssessmentModalProps> = ({
                     </table>
                   )}
 
+                  {q.dataInformasi.visualisasiGrafik && (
+                    <div className="border border-slate-300 bg-slate-50/70 p-2.5 rounded text-xs my-2 space-y-1">
+                      <span className="font-bold flex items-center gap-1.5 text-slate-800">
+                        <span>📊 Visualisasi Grafik Data: {q.dataInformasi.visualisasiGrafik.judul}</span>
+                        <span className="text-[10px] font-normal text-slate-500">({q.dataInformasi.visualisasiGrafik.tipeGrafik.toUpperCase()})</span>
+                      </span>
+                      {q.dataInformasi.visualisasiGrafik.keterangan && (
+                        <p className="text-[11px] text-slate-600 italic">{q.dataInformasi.visualisasiGrafik.keterangan}</p>
+                      )}
+                      <div className="flex flex-wrap gap-2 pt-1 text-[11px]">
+                        {q.dataInformasi.visualisasiGrafik.dataPoints.map((dp, dpIdx) => (
+                          <span key={dpIdx} className="bg-white border border-slate-300 px-2 py-0.5 rounded font-mono">
+                            <strong>{dp.label}:</strong> {dp.nilai} {q.dataInformasi.visualisasiGrafik?.unit || ''}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {q.dataInformasi.kutipanPihak && q.dataInformasi.kutipanPihak.length > 0 && (
                     <div className="grid grid-cols-2 gap-2 my-2">
                       {q.dataInformasi.kutipanPihak.map((pihak, pIdx) => (

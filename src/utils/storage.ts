@@ -188,10 +188,39 @@ export async function syncSubmissionsWithServer(): Promise<StudentSubmission[]> 
 }
 
 /**
- * Generate a direct link for students to work on Android or Laptop
+ * Helper to get the public, unauthenticated share origin for students.
+ * In Google AI Studio on Cloud Run, 'ais-dev-' URLs are restricted to developer accounts (causing 403 Forbidden for students).
+ * Replacing 'ais-dev-' with 'ais-pre-' provides the public Shared App URL that anyone on Android or Laptop can access freely.
  */
-export function buildStudentShareUrl(assessment: Assessment): string {
-  const origin = window.location.origin;
+export function getPublicShareOrigin(customBase?: string): string {
+  if (customBase && customBase.trim()) {
+    return customBase.trim().replace(/\/+$/, '');
+  }
+
+  try {
+    const savedCustom = localStorage.getItem('custom_share_origin');
+    if (savedCustom && savedCustom.trim()) {
+      return savedCustom.trim().replace(/\/+$/, '');
+    }
+  } catch (e) {
+    // Ignore localStorage errors
+  }
+
+  let origin = window.location.origin;
+  // Automatically convert private dev container URL to public shared container URL
+  if (origin.includes('ais-dev-')) {
+    origin = origin.replace('ais-dev-', 'ais-pre-');
+  }
+
+  return origin;
+}
+
+/**
+ * Generate a direct link for students to work on Android or Laptop.
+ * Automatically resolves to the public URL to ensure students don't encounter 403 Forbidden.
+ */
+export function buildStudentShareUrl(assessment: Assessment, customOrigin?: string): string {
+  const origin = customOrigin && customOrigin.trim() ? customOrigin.trim().replace(/\/+$/, '') : getPublicShareOrigin();
   const pathname = window.location.pathname;
   const code = encodeURIComponent(assessment.kodeAkses);
   return `${origin}${pathname}?view=student&code=${code}`;
@@ -200,8 +229,8 @@ export function buildStudentShareUrl(assessment: Assessment): string {
 /**
  * Generate formatted text for WhatsApp or classroom chat
  */
-export function buildWhatsAppShareText(assessment: Assessment): string {
-  const shareUrl = buildStudentShareUrl(assessment);
+export function buildWhatsAppShareText(assessment: Assessment, customOrigin?: string): string {
+  const shareUrl = buildStudentShareUrl(assessment, customOrigin);
   return `*ASESMEN KONTEKSTUAL KURIKULUM MERDEKA*\n` +
     `*Karya:* Heriansyah, S.Si., S.Pd., M.Pd\n\n` +
     `Halo anak-anak, silakan kerjakan asesmen berpikir kritis berikut melalui HP Android atau Laptop kalian:\n\n` +
