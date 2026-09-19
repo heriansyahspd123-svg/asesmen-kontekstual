@@ -69,6 +69,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
   const [copyFeedback, setCopyFeedback] = useState<boolean>(false);
   const [copiedShareLink, setCopiedShareLink] = useState<boolean>(false);
   const [saveFeedback, setSaveFeedback] = useState<boolean>(false);
+  const [dataSavedFeedback, setDataSavedFeedback] = useState<boolean>(false);
   const [showQCDetails, setShowQCDetails] = useState<boolean>(false);
   const [selectedModifier, setSelectedModifier] = useState<string>('lebih banyak data');
   const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
@@ -118,6 +119,79 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
     setTimeout(() => setSaveFeedback(false), 2000);
   };
 
+  const handleSaveDataSection = () => {
+    onSave(currentAssessment);
+    setDataSavedFeedback(true);
+    setTimeout(() => setDataSavedFeedback(false), 2500);
+  };
+
+  const handleUpdateTableCell = (rowIndex: number, colIndex: number, value: string) => {
+    if (!currentQ?.dataInformasi?.tabelData) return;
+    const newBaris = currentQ.dataInformasi.tabelData.baris.map((row, rIdx) => {
+      if (rIdx !== rowIndex) return row;
+      const newRow = [...row];
+      newRow[colIndex] = value;
+      return newRow;
+    });
+    handleUpdateQuestion({
+      dataInformasi: {
+        ...currentQ.dataInformasi,
+        tabelData: {
+          ...currentQ.dataInformasi.tabelData,
+          baris: newBaris
+        }
+      }
+    });
+  };
+
+  const handleUpdateTableHeader = (colIndex: number, value: string) => {
+    if (!currentQ?.dataInformasi?.tabelData) return;
+    const newHeaders = [...currentQ.dataInformasi.tabelData.headers];
+    newHeaders[colIndex] = value;
+    handleUpdateQuestion({
+      dataInformasi: {
+        ...currentQ.dataInformasi,
+        tabelData: {
+          ...currentQ.dataInformasi.tabelData,
+          headers: newHeaders
+        }
+      }
+    });
+  };
+
+  const handleAddTableRow = () => {
+    if (!currentQ?.dataInformasi?.tabelData) return;
+    const numCols = currentQ.dataInformasi.tabelData.headers?.length || 3;
+    const newRow = Array(numCols).fill('Data baru');
+    const newBaris = [...currentQ.dataInformasi.tabelData.baris, newRow];
+    handleUpdateQuestion({
+      dataInformasi: {
+        ...currentQ.dataInformasi,
+        tabelData: {
+          ...currentQ.dataInformasi.tabelData,
+          baris: newBaris
+        }
+      }
+    });
+  };
+
+  const handleDeleteTableRow = (rIdx: number) => {
+    if (!currentQ?.dataInformasi?.tabelData || currentQ.dataInformasi.tabelData.baris.length <= 1) {
+      alert('Tabel harus memiliki minimal 1 baris data.');
+      return;
+    }
+    const newBaris = currentQ.dataInformasi.tabelData.baris.filter((_, idx) => idx !== rIdx);
+    handleUpdateQuestion({
+      dataInformasi: {
+        ...currentQ.dataInformasi,
+        tabelData: {
+          ...currentQ.dataInformasi.tabelData,
+          baris: newBaris
+        }
+      }
+    });
+  };
+
   const handleCopyText = () => {
     const cfg = (currentAssessment.config || {}) as Partial<AssessmentConfig>;
     const text = `=== ${currentAssessment.judul} ===\n` +
@@ -154,9 +228,12 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
           config: currentAssessment.config
         })
       });
-      const data = await res.json();
-      if (data.success && data.question) {
-        handleUpdateQuestion(data.question);
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.success && data.question) {
+          handleUpdateQuestion(data.question);
+        }
       }
     } catch (e) {
       console.error('Error regenerating question:', e);
@@ -707,16 +784,36 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
 
           {/* 2. Data / Informasi (Tabel / Kutipan Pihak) */}
           <div className="space-y-4 p-5 rounded-2xl bg-slate-50/80 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 dark:border-slate-700 pb-3">
               <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
                 <span className="w-5 h-5 rounded-md bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300 flex items-center justify-center text-xs font-bold">2</span>
                 Data & Bukti Kasus (Tabel, Angka & Multi-Perspektif)
               </label>
+
+              {/* Tombol Simpan Data Bagian Ini */}
+              <button
+                type="button"
+                onClick={handleSaveDataSection}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm transition-all cursor-pointer"
+                title="Simpan data kasus, tabel, dan angka soal ini"
+              >
+                {dataSavedFeedback ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-200" />
+                    <span>Data Bagian Ini Tersimpan!</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Simpan Data Bagian Ini</span>
+                  </>
+                )}
+              </button>
             </div>
 
             <div>
-              <label className="text-[11px] text-slate-500 dark:text-slate-400 block mb-1">
-                Deskripsi Data Pengamatan:
+              <label className="text-[11px] text-slate-500 dark:text-slate-400 block mb-1 font-medium">
+                Deskripsi Data Pengamatan / Bukti Empiris:
               </label>
               <textarea
                 rows={2}
@@ -724,36 +821,86 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                 onChange={(e) => handleUpdateQuestion({
                   dataInformasi: { ...(currentQ.dataInformasi || { tipe: 'teks_campuran' as const }), konten: e.target.value }
                 })}
+                placeholder="Tuliskan deskripsi data pengamatan..."
                 className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors"
               />
             </div>
 
             {/* Render Editable Table if present */}
             {currentQ.dataInformasi?.tabelData && Array.isArray(currentQ.dataInformasi.tabelData.headers) && Array.isArray(currentQ.dataInformasi.tabelData.baris) && (
-              <div className="space-y-2">
-                <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 flex items-center gap-1">
-                  <TableIcon className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                  Tabel Data Spesifik Kasus:
-                </span>
-                <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 flex items-center gap-1">
+                    <TableIcon className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    Tabel Data Kasus (Klik teks/angka untuk mengedit langsung):
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleAddTableRow}
+                    className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 px-2 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800 transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>Tambah Baris Data</span>
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xs">
                   <table className="w-full text-xs text-left">
                     <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold border-b border-slate-200 dark:border-slate-700">
                       <tr>
                         {currentQ.dataInformasi.tabelData.headers.map((h, i) => (
-                          <th key={i} className="p-2.5">{h}</th>
+                          <th key={i} className="p-2 min-w-[120px]">
+                            <input
+                              type="text"
+                              value={h}
+                              onChange={(e) => handleUpdateTableHeader(i, e.target.value)}
+                              className="w-full px-2 py-1 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-bold text-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              title="Klik untuk mengubah judul kolom"
+                            />
+                          </th>
                         ))}
+                        <th className="p-2 w-10 text-center font-normal text-slate-400">Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {currentQ.dataInformasi.tabelData.baris.map((row, rIdx) => (
                         <tr key={rIdx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
                           {Array.isArray(row) && row.map((cell, cIdx) => (
-                            <td key={cIdx} className="p-2.5 font-medium text-slate-800 dark:text-slate-200">{cell}</td>
+                            <td key={cIdx} className="p-2 min-w-[120px]">
+                              <input
+                                type="text"
+                                value={cell}
+                                onChange={(e) => handleUpdateTableCell(rIdx, cIdx, e.target.value)}
+                                className="w-full px-2 py-1 rounded bg-transparent hover:bg-slate-50 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent focus:border-indigo-400 font-medium text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-colors"
+                              />
+                            </td>
                           ))}
+                          <td className="p-2 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteTableRow(rIdx)}
+                              title="Hapus baris ini"
+                              className="text-slate-400 hover:text-rose-600 transition-colors p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-slate-400 dark:text-slate-500 pt-0.5">
+                  <span>Tip: Perubahan pada tabel otomatis tersinkronisasi ke grafik visual siswa.</span>
+                  <button
+                    type="button"
+                    onClick={handleSaveDataSection}
+                    className="text-indigo-600 dark:text-indigo-400 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <Save className="w-3 h-3" />
+                    <span>{dataSavedFeedback ? '✓ Tersimpan!' : 'Simpan Data Tabel'}</span>
+                  </button>
                 </div>
               </div>
             )}
@@ -958,6 +1105,48 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
           </div>
         </div>
       )}
+
+      {/* Bottom Save & Action Card */}
+      <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <h4 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white flex items-center gap-2">
+            <Save className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <span>Simpan Seluruh Data & Perubahan Asesmen</span>
+          </h4>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Pastikan seluruh data kasus, tabel, kunci guru, dan rubrik tersimpan sebelum dibagikan ke siswa.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+          <button
+            type="button"
+            onClick={handleSave}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-700/20 transition-all cursor-pointer"
+          >
+            <Save className="w-4 h-4" />
+            <span>{saveFeedback ? 'Data Berhasil Disimpan!' : 'Simpan Semua Data Asesmen'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleOpenShare}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+          >
+            <Share2 className="w-3.5 h-3.5" />
+            <span>Bagikan ke Siswa</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onPrint(currentAssessment)}
+            className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+          >
+            <Printer className="w-3.5 h-3.5" />
+            <span>Cetak / PDF</span>
+          </button>
+        </div>
+      </div>
 
       {/* Share Modal for Android & Laptop Access */}
       <ShareStudentLinkModal

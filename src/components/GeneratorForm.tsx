@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { Sparkles, ArrowLeft, Loader2, CheckCircle2, AlertCircle, HelpCircle, Layers, Database, BookOpen, Clock, Award, Compass, ChevronDown, Check, BarChart3, LineChart, PieChart, AreaChart, TrendingUp } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Sparkles, ArrowLeft, Loader2, CheckCircle2, AlertCircle, HelpCircle, Layers, Database, BookOpen, Clock, Award, Compass, ChevronDown, Check, BarChart3, LineChart, PieChart, AreaChart, TrendingUp, Save, Trash2, Search, Filter } from 'lucide-react';
 import { AssessmentConfig, Assessment, FaseKurikulum } from '../types';
-import { getFaseByJenjangAndKelas, DEFAULT_KKTP_INTERVALS, CAPAIAN_PEMBELAJARAN_PRESETS, CapaianPembelajaranPreset } from '../data/kurikulumMerdekaData';
+import { getFaseByJenjangAndKelas, DEFAULT_KKTP_INTERVALS, CAPAIAN_PEMBELAJARAN_PRESETS, CapaianPembelajaranPreset, BSKAP_DECREE_INFO } from '../data/kurikulumMerdekaData';
+import { generateAlgorithmicAssessment } from '../utils/assessmentGeneratorEngine';
 
 interface GeneratorFormProps {
   onBack: () => void;
@@ -30,6 +31,9 @@ export const GeneratorForm: React.FC<GeneratorFormProps> = ({ onBack, onGenerate
     'Peserta didik menganalisis hubungan timbal balik antara manusia dengan lingkungan, menyelidiki permasalahan lingkungan sekolah melalui pengumpulan dan analisis data empiris, serta merancang tindakan berkelanjutan berbasis bukti.'
   );
   const [showCPPresets, setShowCPPresets] = useState<boolean>(false);
+  const [cpFilterFase, setCpFilterFase] = useState<string>('SEMUA');
+  const [cpFilterMapel, setCpFilterMapel] = useState<string>('SEMUA');
+  const [cpSearchQuery, setCpSearchQuery] = useState<string>('');
 
   const [tujuanPembelajaran, setTujuanPembelajaran] = useState<string>(
     'Peserta didik mampu menganalisis masalah timbulan sampah di sekolah, membandingkan dua opsi solusi berdasarkan data konkret, dan merefleksikan konsekuensi keputusan.'
@@ -47,6 +51,54 @@ export const GeneratorForm: React.FC<GeneratorFormProps> = ({ onBack, onGenerate
   );
   const [sertakanGrafik, setSertakanGrafik] = useState<boolean>(true);
   const [tipeGrafikPreferensi, setTipeGrafikPreferensi] = useState<'otomatis' | 'bar' | 'line' | 'pie' | 'area'>('otomatis');
+
+  // Custom Local Data Presets saved by teacher
+  const [customPresets, setCustomPresets] = useState<{ id: string; label: string; text: string; date: string }[]>(() => {
+    try {
+      const stored = localStorage.getItem('asmt_custom_local_data_presets');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [savedPresetFeedback, setSavedPresetFeedback] = useState<boolean>(false);
+
+  const handleSaveDataPreset = () => {
+    const trimmed = dataLokalDeskripsi.trim();
+    if (!trimmed) {
+      alert('Tuliskan data atau kondisi nyata terlebih dahulu sebelum menyimpannya.');
+      return;
+    }
+
+    const firstWords = trimmed.slice(0, 32) + (trimmed.length > 32 ? '...' : '');
+    const newPreset = {
+      id: 'cp-' + Date.now(),
+      label: firstWords,
+      text: trimmed,
+      date: new Date().toLocaleDateString('id-ID')
+    };
+
+    const updated = [newPreset, ...customPresets.filter(p => p.text !== trimmed)].slice(0, 15);
+    setCustomPresets(updated);
+    try {
+      localStorage.setItem('asmt_custom_local_data_presets', JSON.stringify(updated));
+    } catch (e) {
+      console.warn('Gagal menyimpan ke localStorage:', e);
+    }
+    setSavedPresetFeedback(true);
+    setTimeout(() => setSavedPresetFeedback(false), 3000);
+  };
+
+  const handleDeleteCustomPreset = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = customPresets.filter(p => p.id !== id);
+    setCustomPresets(updated);
+    try {
+      localStorage.setItem('asmt_custom_local_data_presets', JSON.stringify(updated));
+    } catch (err) {
+      console.warn('Gagal menghapus dari localStorage:', err);
+    }
+  };
 
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [loadingStep, setLoadingStep] = useState<string>('');
@@ -76,17 +128,62 @@ export const GeneratorForm: React.FC<GeneratorFormProps> = ({ onBack, onGenerate
 
   const handleApplyCPPreset = (preset: CapaianPembelajaranPreset) => {
     setJenjang(preset.jenjang);
-    if (preset.jenjang === 'SD') {
-      setKelas(preset.fase === 'Fase B' ? 'IV' : 'V');
+    if (preset.kelasContoh) {
+      setKelas(preset.kelasContoh);
+    } else if (preset.jenjang === 'SD') {
+      if (preset.fase === 'Fase A') setKelas('II');
+      else if (preset.fase === 'Fase B') setKelas('IV');
+      else setKelas('V');
     } else {
       setKelas('VIII');
     }
     setMataPelajaran(preset.mataPelajaran);
+    if (preset.materiContoh) {
+      setMateri(preset.materiContoh);
+    }
     setElemenCP(preset.elemenCP);
     setCapaianPembelajaran(preset.rumusanCP);
     setTujuanPembelajaran(preset.tujuanPembelajaranContoh);
+    if (preset.dataLokalContoh) {
+      setDataLokalDeskripsi(preset.dataLokalContoh);
+      setMenggunakanDataLokal(true);
+    }
     setShowCPPresets(false);
   };
+
+  const filteredCPPresets = useMemo(() => {
+    return CAPAIAN_PEMBELAJARAN_PRESETS.filter(item => {
+      // Filter by Fase / Jenjang
+      if (cpFilterFase === 'SD' && item.jenjang !== 'SD') return false;
+      if (cpFilterFase === 'SMP' && item.jenjang !== 'SMP') return false;
+      if (cpFilterFase.startsWith('Fase') && item.fase !== cpFilterFase) return false;
+
+      // Filter by Mata Pelajaran
+      if (cpFilterMapel !== 'SEMUA') {
+        const targetMapel = cpFilterMapel.toLowerCase();
+        const itemMapel = (item.kategoriMapel || item.mataPelajaran).toLowerCase();
+        const rawMapel = item.mataPelajaran.toLowerCase();
+        if (!itemMapel.includes(targetMapel) && !rawMapel.includes(targetMapel)) {
+          return false;
+        }
+      }
+
+      // Filter by Search Query
+      if (cpSearchQuery.trim()) {
+        const q = cpSearchQuery.toLowerCase();
+        const match =
+          item.mataPelajaran.toLowerCase().includes(q) ||
+          item.elemenCP.toLowerCase().includes(q) ||
+          item.rumusanCP.toLowerCase().includes(q) ||
+          (item.materiContoh && item.materiContoh.toLowerCase().includes(q)) ||
+          item.tujuanPembelajaranContoh.toLowerCase().includes(q) ||
+          (item.kategoriMapel && item.kategoriMapel.toLowerCase().includes(q));
+        if (!match) return false;
+      }
+
+      return true;
+    });
+  }, [cpFilterFase, cpFilterMapel, cpSearchQuery]);
 
   const toggleFokus = (item: string) => {
     setFokusPenalaran(prev =>
@@ -138,30 +235,38 @@ export const GeneratorForm: React.FC<GeneratorFormProps> = ({ onBack, onGenerate
         setLoadingStep('Menyusun pertanyaan analitis, permintaan bukti, dan rubrik 1-4...');
       }, 2500);
 
-      const res = await fetch('/api/generate-assessment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config)
-      });
+      let generatedAssessment: Assessment | null = null;
+
+      try {
+        const res = await fetch('/api/generate-assessment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(config)
+        });
+
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
+          const data = await res.json();
+          if (data.success && data.assessment) {
+            generatedAssessment = data.assessment;
+          }
+        }
+      } catch (netErr) {
+        console.warn('Backend unavailable, using built-in contextual generator engine:', netErr);
+      }
 
       clearTimeout(stepTimer1);
       clearTimeout(stepTimer2);
 
-      const contentType = res.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        throw new Error('Layanan AI Generator membutuhkan backend Node.js. Di hosting statis seperti Netlify, pastikan API backend aktif atau gunakan fitur buat/edit soal manual.');
+      // If backend is unavailable or on static hosts like Netlify, generate with built-in engine
+      if (!generatedAssessment) {
+        generatedAssessment = generateAlgorithmicAssessment(config);
       }
 
-      const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        throw new Error(data.message || 'Gagal membuat asesmen');
-      }
-
-      onGenerated(data.assessment);
+      onGenerated(generatedAssessment);
     } catch (err: any) {
       console.error(err);
-      setErrorMessage(err.message || 'Terjadi kesalahan saat menghubungi generator. Silakan coba lagi.');
+      setErrorMessage(err.message || 'Terjadi kesalahan saat membuat asesmen. Silakan coba lagi.');
     } finally {
       setIsLoading(false);
     }
@@ -314,45 +419,222 @@ export const GeneratorForm: React.FC<GeneratorFormProps> = ({ onBack, onGenerate
 
             {/* Dropdown Preset CP Kemendikbud */}
             {showCPPresets && (
-              <div className="p-4 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-emerald-950 dark:text-emerald-200 flex items-center gap-1.5">
-                    <Compass className="w-4 h-4 text-emerald-700 dark:text-emerald-400" />
-                    Pilih Capaian Pembelajaran Terstandar Nasional (1-Klik Isi):
-                  </span>
+              <div className="p-4 sm:p-5 rounded-2xl bg-emerald-50/90 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 space-y-3.5 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-emerald-200/80 dark:border-emerald-800/80 pb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                      <Compass className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs sm:text-sm font-bold text-emerald-950 dark:text-emerald-100 flex items-center gap-1.5">
+                        Katalog Capaian Pembelajaran Resmi BSKAP (SD & SMP)
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-200/70 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-300">
+                          {filteredCPPresets.length} Pilihan
+                        </span>
+                      </h4>
+                      <p className="text-[11px] text-emerald-800/80 dark:text-emerald-300/80">
+                        Klik salah satu preset untuk otomatis mengisi CP, Elemen, Kelas, Mapel, Topik, & Kasus Data Riil.
+                      </p>
+                    </div>
+                  </div>
                   <button
                     type="button"
                     onClick={() => setShowCPPresets(false)}
-                    className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
+                    className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-emerald-200 dark:border-slate-700 shadow-xs cursor-pointer self-start sm:self-auto"
                   >
-                    Tutup
+                    Tutup Katalog
                   </button>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                  {CAPAIAN_PEMBELAJARAN_PRESETS.map((preset, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => handleApplyCPPreset(preset)}
-                      className="text-left p-3 rounded-xl bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-800/80 hover:border-emerald-400 dark:hover:border-emerald-600 hover:shadow-sm transition-all group cursor-pointer"
-                    >
-                      <div className="flex items-center justify-between gap-1 mb-1">
-                        <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/90 text-emerald-900 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                          {preset.jenjang} • {preset.fase} • {preset.mataPelajaran}
-                        </span>
-                        <span className="text-[10px] text-emerald-700 dark:text-emerald-400 group-hover:underline font-semibold flex items-center gap-0.5">
-                          Pilih <Check className="w-3 h-3" />
-                        </span>
+
+                {/* Legal Reference Verification Banner */}
+                <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-white/90 dark:bg-slate-900/90 border border-emerald-200/80 dark:border-emerald-800/80 text-xs shadow-xs">
+                  <div className="w-6 h-6 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0 mt-0.5">
+                    <Award className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="space-y-1.5 flex-1">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-bold text-emerald-950 dark:text-emerald-100 text-xs sm:text-sm">
+                        Regulasi CP Resmi Kurikulum Merdeka Terkini (SD & SMP)
+                      </span>
+                      <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-700 text-white font-bold tracking-wide">
+                        RESMI TERBARU
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] pt-1">
+                      <div className="p-2 rounded-lg bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-800/60">
+                        <div className="font-bold text-emerald-900 dark:text-emerald-200 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                          <span>Aturan Utama (Umum):</span>
+                        </div>
+                        <p className="text-slate-700 dark:text-slate-300 mt-0.5 leading-snug">
+                          <strong>Keputusan Kepala BSKAP No. 046/H/KR/2025</strong> tentang Capaian Pembelajaran pada PAUD, Jenjang Dikdas, dan Dikmen.
+                        </p>
                       </div>
-                      <p className="text-xs font-semibold text-slate-900 dark:text-white line-clamp-1">
-                        {preset.elemenCP}
-                      </p>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 mt-0.5">
-                        {preset.rumusanCP}
-                      </p>
+
+                      <div className="p-2 rounded-lg bg-amber-50/80 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-800/60">
+                        <div className="font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
+                          <span>Aturan Perubahan (Khusus Agama):</span>
+                        </div>
+                        <p className="text-slate-700 dark:text-slate-300 mt-0.5 leading-snug">
+                          <strong>Keputusan Kepala BKPDM No. 020 Tahun 2026</strong> tentang Perubahan atas Keputusan Kepala BSKAP No. 046/H/KR/2025.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Filter and Search Bar */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <div className="relative flex-1">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={cpSearchQuery}
+                      onChange={(e) => setCpSearchQuery(e.target.value)}
+                      placeholder="Cari mata pelajaran, materi, atau kata kunci CP..."
+                      className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    {cpSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setCpSearchQuery('')}
+                        className="text-[10px] text-slate-400 hover:text-slate-600 absolute right-2.5 top-1/2 -translate-y-1/2 cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                  
+                  {/* Fase Quick Filters */}
+                  <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+                    {[
+                      { id: 'SEMUA', label: 'Semua Fase' },
+                      { id: 'SD', label: 'Semua SD' },
+                      { id: 'Fase A', label: 'Fase A (Kls 1-2)' },
+                      { id: 'Fase B', label: 'Fase B (Kls 3-4)' },
+                      { id: 'Fase C', label: 'Fase C (Kls 5-6)' },
+                      { id: 'SMP', label: 'SMP (Fase D)' }
+                    ].map(f => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => setCpFilterFase(f.id)}
+                        className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg whitespace-nowrap transition-colors cursor-pointer ${
+                          cpFilterFase === f.id
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'bg-white dark:bg-slate-800 text-emerald-900 dark:text-emerald-200 hover:bg-emerald-100 dark:hover:bg-slate-700 border border-emerald-200 dark:border-emerald-900'
+                        }`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Mapel Quick Filters */}
+                <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none">
+                  <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap mr-1 flex items-center gap-1">
+                    <Filter className="w-3 h-3" /> Mapel:
+                  </span>
+                  {[
+                    { id: 'SEMUA', label: 'Semua' },
+                    { id: 'Agama', label: 'Pendidikan Agama' },
+                    { id: 'IPAS', label: 'IPAS / IPA' },
+                    { id: 'Matematika', label: 'Matematika' },
+                    { id: 'Bahasa Indonesia', label: 'B. Indonesia' },
+                    { id: 'Pancasila', label: 'Pendidikan Pancasila' },
+                    { id: 'IPS', label: 'IPS' },
+                    { id: 'Inggris', label: 'B. Inggris' },
+                    { id: 'Informatika', label: 'Informatika' },
+                    { id: 'PJOK', label: 'PJOK' },
+                    { id: 'Seni', label: 'Seni & Prakarya' }
+                  ].map(m => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setCpFilterMapel(m.id)}
+                      className={`text-[10px] font-semibold px-2.5 py-1 rounded-lg whitespace-nowrap transition-colors cursor-pointer ${
+                        cpFilterMapel === m.id
+                          ? 'bg-slate-800 text-white dark:bg-emerald-500 dark:text-slate-950 shadow-xs'
+                          : 'bg-white/90 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
+                      }`}
+                    >
+                      {m.label}
                     </button>
                   ))}
                 </div>
+
+                {/* Preset Cards Grid */}
+                {filteredCPPresets.length === 0 ? (
+                  <div className="p-6 text-center bg-white dark:bg-slate-900 rounded-xl border border-emerald-200 dark:border-emerald-900 text-xs text-slate-500 dark:text-slate-400">
+                    Tidak ditemukan rekomendasi CP yang sesuai filter atau kata kunci &quot;{cpSearchQuery}&quot;.
+                    <button
+                      type="button"
+                      onClick={() => { setCpSearchQuery(''); setCpFilterFase('SEMUA'); setCpFilterMapel('SEMUA'); }}
+                      className="ml-2 text-emerald-600 font-bold underline cursor-pointer"
+                    >
+                      Reset Filter
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-[420px] overflow-y-auto pr-1">
+                    {filteredCPPresets.map((preset, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handleApplyCPPreset(preset)}
+                        className="text-left p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800/80 hover:border-emerald-500 dark:hover:border-emerald-500 hover:shadow-md transition-all group cursor-pointer flex flex-col justify-between"
+                      >
+                        <div>
+                          <div className="flex flex-wrap items-center justify-between gap-1.5 mb-1.5">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/90 text-emerald-900 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800">
+                                {preset.jenjang} • {preset.fase} {preset.kelasContoh ? `(Kelas ${preset.kelasContoh})` : ''}
+                              </span>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-sky-100 dark:bg-sky-950/90 text-sky-900 dark:text-sky-200 border border-sky-200 dark:border-sky-800">
+                                {preset.mataPelajaran}
+                              </span>
+                              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border ${
+                                preset.aturanTerkait === 'BKPDM 020/2026'
+                                  ? 'bg-amber-100 dark:bg-amber-950/90 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-700'
+                                  : 'bg-emerald-100 dark:bg-emerald-950/90 text-emerald-900 dark:text-emerald-200 border-emerald-300 dark:border-emerald-700'
+                              }`}>
+                                {preset.aturanTerkait || 'BSKAP 046/2025'}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-emerald-700 dark:text-emerald-400 group-hover:underline font-bold flex items-center gap-0.5 shrink-0">
+                              Gunakan <Check className="w-3 h-3" />
+                            </span>
+                          </div>
+                          
+                          <p className="text-xs font-bold text-slate-900 dark:text-white line-clamp-1 mb-1">
+                            {preset.elemenCP}
+                          </p>
+
+                          {preset.materiContoh && (
+                            <p className="text-[11px] font-medium text-emerald-800 dark:text-emerald-300 line-clamp-1 mb-1.5 flex items-center gap-1">
+                              <BookOpen className="w-3 h-3 shrink-0" />
+                              <span className="font-semibold">Topik:</span> {preset.materiContoh}
+                            </p>
+                          )}
+
+                          <p className="text-[11px] text-slate-600 dark:text-slate-400 line-clamp-2 leading-relaxed bg-slate-50 dark:bg-slate-800/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
+                            {preset.rumusanCP}
+                          </p>
+                        </div>
+
+                        {preset.dataLokalContoh && (
+                          <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1">
+                            <Database className="w-3 h-3 text-emerald-600 shrink-0" />
+                            <span className="truncate"><strong className="text-slate-700 dark:text-slate-300">Data Kasus:</strong> {preset.dataLokalContoh}</span>
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -366,17 +648,28 @@ export const GeneratorForm: React.FC<GeneratorFormProps> = ({ onBack, onGenerate
                   onChange={(e) => setMataPelajaran(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors"
                 >
-                  <option value="IPAS">IPAS (Ilmu Pengetahuan Alam dan Sosial)</option>
-                  <option value="IPA">IPA (Ilmu Pengetahuan Alam)</option>
-                  <option value="Matematika">Matematika</option>
-                  <option value="Bahasa Indonesia">Bahasa Indonesia</option>
-                  <option value="IPS">IPS (Ilmu Pengetahuan Sosial)</option>
-                  <option value="PPKn/Pendidikan Pancasila">PPKn / Pendidikan Pancasila</option>
-                  <option value="Bahasa Inggris">Bahasa Inggris</option>
-                  <option value="Informatika">Informatika</option>
-                  <option value="Seni">Seni (Rupa / Musik / Tari)</option>
-                  <option value="PJOK">PJOK (Pendidikan Jasmani)</option>
-                  <option value="Lainnya">Lainnya / Proyek P5</option>
+                  <optgroup label="Pendidikan Agama & Budi Pekerti (BKPDM 020/2026)">
+                    <option value="Pendidikan Agama Islam dan Budi Pekerti">Pendidikan Agama Islam dan Budi Pekerti</option>
+                    <option value="Pendidikan Agama Kristen dan Budi Pekerti">Pendidikan Agama Kristen dan Budi Pekerti</option>
+                    <option value="Pendidikan Agama Katolik dan Budi Pekerti">Pendidikan Agama Katolik dan Budi Pekerti</option>
+                    <option value="Pendidikan Agama Hindu dan Budi Pekerti">Pendidikan Agama Hindu dan Budi Pekerti</option>
+                    <option value="Pendidikan Agama Buddha dan Budi Pekerti">Pendidikan Agama Buddha dan Budi Pekerti</option>
+                    <option value="Pendidikan Agama Khonghucu dan Budi Pekerti">Pendidikan Agama Khonghucu dan Budi Pekerti</option>
+                  </optgroup>
+                  <optgroup label="Mata Pelajaran Umum (BSKAP 046/2025)">
+                    <option value="IPAS">IPAS (Ilmu Pengetahuan Alam dan Sosial - SD)</option>
+                    <option value="IPA">IPA (Ilmu Pengetahuan Alam - SMP)</option>
+                    <option value="Matematika">Matematika</option>
+                    <option value="Bahasa Indonesia">Bahasa Indonesia</option>
+                    <option value="IPS">IPS (Ilmu Pengetahuan Sosial - SMP)</option>
+                    <option value="PPKn/Pendidikan Pancasila">PPKn / Pendidikan Pancasila</option>
+                    <option value="Bahasa Inggris">Bahasa Inggris</option>
+                    <option value="Informatika">Informatika (SMP)</option>
+                    <option value="PJOK">PJOK (Pendidikan Jasmani, Olahraga, dan Kesehatan)</option>
+                    <option value="Seni Rupa">Seni Rupa</option>
+                    <option value="Prakarya">Prakarya (Pengolahan / Rekayasa / Kerajinan)</option>
+                    <option value="Lainnya">Lainnya / Proyek Penguatan Profil Pelajar Pancasila (P5)</option>
+                  </optgroup>
                 </select>
               </div>
 
@@ -536,15 +829,32 @@ export const GeneratorForm: React.FC<GeneratorFormProps> = ({ onBack, onGenerate
             </div>
 
             {menggunakanDataLokal && (
-              <div className="p-4 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800 space-y-3">
-                <div className="flex items-center justify-between">
+              <div className="p-4 sm:p-5 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800 space-y-3.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <label className="text-xs font-bold text-emerald-950 dark:text-emerald-200 flex items-center gap-1.5">
                     <Database className="w-4 h-4 text-emerald-700 dark:text-emerald-400" />
                     Masukkan Data / Kondisi Nyata Siswa:
                   </label>
-                  <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
-                    Contoh siap pakai di bawah:
-                  </span>
+                  
+                  {/* Button Simpan Data Bagian Ini */}
+                  <button
+                    type="button"
+                    onClick={handleSaveDataPreset}
+                    className="self-start sm:self-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition-all cursor-pointer"
+                    title="Simpan data kasus sekolah ini agar dapat digunakan kembali kapan saja"
+                  >
+                    {savedPresetFeedback ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-200" />
+                        <span>Data Berhasil Disimpan!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-3.5 h-3.5" />
+                        <span>Simpan Data Bagian Ini</span>
+                      </>
+                    )}
+                  </button>
                 </div>
 
                 <textarea
@@ -555,18 +865,59 @@ export const GeneratorForm: React.FC<GeneratorFormProps> = ({ onBack, onGenerate
                   className="w-full px-3.5 py-2.5 rounded-xl border border-emerald-300 dark:border-emerald-800 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600 transition-colors"
                 />
 
-                {/* Preset Chips */}
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  {LOCAL_DATA_PRESETS.map((preset, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => setDataLokalDeskripsi(preset.text)}
-                      className="text-[11px] px-2.5 py-1 rounded-full bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100/70 dark:hover:bg-emerald-900/60 hover:border-emerald-300 transition-colors cursor-pointer"
-                    >
-                      + {preset.label}
-                    </button>
-                  ))}
+                {/* Custom Saved Presets (if any) */}
+                {customPresets.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-emerald-900 dark:text-emerald-300">
+                      <span className="flex items-center gap-1">
+                        <Save className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                        Data Tersimpan Milik Anda (Klik untuk gunakan):
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-normal">{customPresets.length} data tersimpan</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {customPresets.map((preset) => (
+                        <div
+                          key={preset.id}
+                          onClick={() => setDataLokalDeskripsi(preset.text)}
+                          className={`group flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
+                            dataLokalDeskripsi === preset.text
+                              ? 'bg-emerald-700 text-white border-emerald-700 font-semibold'
+                              : 'bg-white dark:bg-slate-800 border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-200 hover:bg-emerald-100 dark:hover:bg-emerald-900/60'
+                          }`}
+                        >
+                          <span className="truncate max-w-[180px]">{preset.label}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteCustomPreset(preset.id, e)}
+                            title="Hapus data tersimpan ini"
+                            className="text-slate-400 hover:text-rose-500 opacity-60 group-hover:opacity-100 transition-opacity ml-1"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Standard Preset Chips */}
+                <div className="space-y-1 pt-1">
+                  <span className="block text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500">
+                    Contoh Standar Siap Pakai:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {LOCAL_DATA_PRESETS.map((preset, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setDataLokalDeskripsi(preset.text)}
+                        className="text-[11px] px-2.5 py-1 rounded-full bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100/70 dark:hover:bg-emerald-900/60 hover:border-emerald-300 transition-colors cursor-pointer"
+                      >
+                        + {preset.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 {/* Visualisasi Grafik Nyata Option */}
