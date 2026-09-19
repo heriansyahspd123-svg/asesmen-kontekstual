@@ -15,6 +15,7 @@ import {
   saveAssessment, 
   getSavedSubmissions, 
   saveSubmission,
+  deleteSubmission,
   syncAssessmentsWithServer,
   syncSubmissionsWithServer
 } from './utils/storage';
@@ -24,6 +25,7 @@ export default function App() {
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [submissions, setSubmissions] = useState<StudentSubmission[]>([]);
   const [selectedAssessmentId, setSelectedAssessmentId] = useState<string | undefined>(undefined);
+  const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | undefined>(undefined);
   const [isGuideOpen, setIsGuideOpen] = useState<boolean>(false);
   const [printAssessment, setPrintAssessment] = useState<Assessment | null>(null);
   const [isTeacherAuditOpen, setIsTeacherAuditOpen] = useState<boolean>(false);
@@ -95,8 +97,17 @@ export default function App() {
   const handleSubmissionSuccess = (submission: StudentSubmission) => {
     saveSubmission(submission);
     setSubmissions(getSavedSubmissions());
+    setSelectedSubmissionId(submission.id);
     setCurrentView('results');
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleDeleteSubmission = (subId: string) => {
+    deleteSubmission(subId);
+    setSubmissions(getSavedSubmissions());
+    if (selectedSubmissionId === subId) {
+      setSelectedSubmissionId(undefined);
+    }
   };
 
   const activeAssessmentForEditor = assessments.find(a => a.id === selectedAssessmentId) || assessments[0];
@@ -124,6 +135,7 @@ export default function App() {
             assessments={assessments}
             flaggedCount={totalFlaggedCount}
             onShare={(asm) => setShareAssessment(asm)}
+            onPrint={(asm) => setPrintAssessment(asm)}
           />
         )}
 
@@ -159,6 +171,8 @@ export default function App() {
             submissions={submissions}
             assessments={assessments}
             onBack={() => handleNavigate('home')}
+            initialSubmissionId={selectedSubmissionId}
+            onDeleteSubmission={handleDeleteSubmission}
           />
         )}
       </main>
@@ -181,6 +195,8 @@ export default function App() {
         submissions={submissions}
         assessments={assessments}
         onSelectSubmissionToView={(subId) => {
+          setSelectedSubmissionId(subId);
+          setIsTeacherAuditOpen(false);
           setCurrentView('results');
         }}
       />

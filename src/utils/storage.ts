@@ -99,6 +99,23 @@ export function saveSubmission(submission: StudentSubmission): void {
   }
 }
 
+/**
+ * Deletes a submission from local storage and remote server
+ */
+export function deleteSubmission(submissionId: string): void {
+  const current = getSavedSubmissions();
+  const filtered = current.filter(s => s.id !== submissionId);
+  localStorage.setItem(SUBMISSIONS_KEY, JSON.stringify(filtered));
+
+  try {
+    fetch(`/api/submissions/${encodeURIComponent(submissionId)}`, {
+      method: 'DELETE'
+    }).catch(err => console.warn('Could not sync submission deletion to server:', err));
+  } catch (e) {
+    // Ignore
+  }
+}
+
 // ASYNC SERVER SYNC METHODS
 
 /**

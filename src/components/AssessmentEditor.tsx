@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ArrowLeft, 
   Save, 
@@ -22,11 +22,16 @@ import {
   Smartphone,
   Laptop,
   QrCode as QrIcon,
-  Check
+  Check,
+  Download,
+  BarChart3,
+  CopyPlus
 } from 'lucide-react';
-import { Assessment, Question, RubrikPenilaian } from '../types';
+import { Assessment, Question, RubrikPenilaian, VisualisasiGrafik, AssessmentConfig } from '../types';
 import { ShareStudentLinkModal } from './ShareStudentLinkModal';
 import { buildStudentShareUrl } from '../utils/storage';
+import { generateInteractiveHtmlAssessment } from '../utils/exportInteractiveHtml';
+import { DataChartViewer } from './DataChartViewer';
 
 interface AssessmentEditorProps {
   assessment: Assessment;
@@ -68,7 +73,15 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
   const [selectedModifier, setSelectedModifier] = useState<string>('lebih banyak data');
   const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
 
-  const currentQ = currentAssessment.questions[activeQuestionIndex];
+  useEffect(() => {
+    if (assessment) {
+      setCurrentAssessment(assessment);
+      setActiveQuestionIndex(0);
+    }
+  }, [assessment]);
+
+  const questions = Array.isArray(currentAssessment?.questions) ? currentAssessment.questions : [];
+  const currentQ = questions[activeQuestionIndex] || questions[0];
   const studentShareUrl = buildStudentShareUrl(currentAssessment);
 
   const handleOpenShare = () => {
@@ -86,7 +99,8 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
   };
 
   const handleUpdateQuestion = (updatedFields: Partial<Question>) => {
-    const newQuestions = [...currentAssessment.questions];
+    const newQuestions = [...questions];
+    if (!newQuestions[activeQuestionIndex]) return;
     newQuestions[activeQuestionIndex] = {
       ...newQuestions[activeQuestionIndex],
       ...updatedFields
@@ -105,20 +119,21 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
   };
 
   const handleCopyText = () => {
+    const cfg = (currentAssessment.config || {}) as Partial<AssessmentConfig>;
     const text = `=== ${currentAssessment.judul} ===\n` +
-      `Jenjang: ${currentAssessment.config.jenjang} Kelas ${currentAssessment.config.kelas}\n` +
-      `Mata Pelajaran: ${currentAssessment.config.mataPelajaran}\n` +
-      `Kode Akses: ${currentAssessment.kodeAkses}\n\n` +
+      `Jenjang: ${cfg.jenjang || ''} Kelas ${cfg.kelas || ''}\n` +
+      `Mata Pelajaran: ${cfg.mataPelajaran || ''}\n` +
+      `Kode Akses: ${currentAssessment.kodeAkses || ''}\n\n` +
       `PETUNJUK:\nBuku, catatan, internet, dan AI boleh digunakan. Namun jawaban harus menunjukkan pemikiranmu sendiri. Gunakan bukti dari kasus/data dan jelaskan alasanmu.\n\n` +
-      currentAssessment.questions.map((q, i) => (
-        `SOAL ${i + 1}: ${q.judulKasus}\n` +
-        `Konteks: ${q.konteks}\n` +
-        `Data: ${q.dataInformasi.konten}\n` +
-        (q.dataInformasi.tabelData ? `[Tabel Data Terlampir]\n` : '') +
-        `Pertanyaan Utama: ${q.pertanyaanUtama}\n` +
-        `Permintaan Bukti: ${q.permintaanBukti}\n` +
-        `Permintaan Alasan: ${q.permintaanAlasan}\n` +
-        `Refleksi: ${q.refleksi}\n`
+      questions.map((q, i) => (
+        `SOAL ${i + 1}: ${q.judulKasus || ''}\n` +
+        `Konteks: ${q.konteks || ''}\n` +
+        `Data: ${q.dataInformasi?.konten || ''}\n` +
+        (q.dataInformasi?.tabelData ? `[Tabel Data Terlampir]\n` : '') +
+        `Pertanyaan Utama: ${q.pertanyaanUtama || ''}\n` +
+        `Permintaan Bukti: ${q.permintaanBukti || ''}\n` +
+        `Permintaan Alasan: ${q.permintaanAlasan || ''}\n` +
+        `Refleksi: ${q.refleksi || ''}\n`
       )).join('\n----------------------------------------\n\n');
 
     navigator.clipboard.writeText(text);
@@ -148,6 +163,136 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
     } finally {
       setIsRegenerating(false);
     }
+  };
+
+  const handleAddQuestion = () => {
+    const nextNomor = currentAssessment.questions.length + 1;
+    const newQuestion: Question = {
+      id: `q-custom-${Date.now()}-${nextNomor}`,
+      nomor: nextNomor,
+      judulKasus: `Kasus Baru ${nextNomor}: ${currentAssessment.config.materi || 'Analisis Masalah Kontekstual'}`,
+      konteks: `Di lingkungan sekitar sekolah, terjadi situasi nyata yang membutuhkan pengamatan dan perbandingan data.`,
+      dataInformasi: {
+        tipe: 'tabel',
+        konten: 'Berikut data pengukuran dari dua kondisi yang diamati secara berkala:',
+        tabelData: {
+          headers: ['Variabel / Waktu', 'Kondisi 1', 'Kondisi 2', 'Catatan Lapangan'],
+          baris: [
+            ['Periode A', '28 unit', '45 unit', 'Kondisi awal stabil'],
+            ['Periode B', '35 unit', '38 unit', 'Terjadi perubahan aktivitas'],
+            ['Periode C', '42 unit', '30 unit', 'Dampak mulai terlihat']
+          ]
+        },
+        visualisasiGrafik: {
+          tipeGrafik: 'line',
+          judulGrafik: `Tren Perbandingan Data Kasus ${nextNomor}`,
+          sumbuX: 'Periode',
+          sumbuY: 'Jumlah',
+          labels: ['Periode A', 'Periode B', 'Periode C'],
+          datasets: [
+            { nama: 'Kondisi 1', nilai: [28, 35, 42], warna: '#0284c7' },
+            { nama: 'Kondisi 2', nilai: [45, 38, 30], warna: '#10b981' }
+          ],
+          deskripsiGrafik: 'Grafik menunjukkan tren peningkatan pada Kondisi 1 dan tren penurunan pada Kondisi 2.'
+        }
+      },
+      masalah: 'Mengapa terjadi perubahan tren yang berlawanan antara kedua kondisi tersebut?',
+      pertanyaanUtama: 'Berdasarkan data tabel dan grafik di atas, tentukan kondisi mana yang memberikan hasil lebih baik dan berikan alasan logis!',
+      permintaanBukti: 'Kutip minimal dua angka dari data di atas untuk memperkuat analisis keputusanmu.',
+      permintaanAlasan: 'Jelaskan hubungan sebab-akibat yang mendasari kesimpulanmu.',
+      refleksi: 'Jika kamu diberikan kesempatan melakukan penyelidikan lanjutan, data apa lagi yang perlu kamu kumpulkan?',
+      bentukSoal: currentAssessment.config.bentukSoal || 'studi kasus',
+      tingkatKesulitan: 'menengah',
+      fokusPenalaran: ['menganalisis', 'mengevaluasi'],
+      kunciJawaban: 'Siswa harus mengutip data perubahan angka secara akurat, menghubungkannya dengan konteks masalah, dan menyadari bahwa data masih terbatas.',
+      petunjukPemandu: [
+        'Perhatikan arah perubahan data dari Periode A hingga Periode C.',
+        'Bandingkan selisih nilai antar kedua kondisi.',
+        'Pikirkan faktor pendukung lain yang mungkin belum tercatat.'
+      ],
+      rubrik: {
+        pemahamanMasalah: {
+          4: 'Menunjukkan pemahaman komprehensif terhadap dilema kasus secara mendalam.',
+          3: 'Memahami masalah utama dengan baik meski ada detail kecil yang terlewat.',
+          2: 'Hanya memahami sebagian dari masalah tanpa melihat gambaran utuh.',
+          1: 'Salah mengidentifikasi masalah utama kasus.'
+        },
+        penggunaanBukti: {
+          4: 'Mengutip data spesifik secara akurat dan relevan untuk semua klaim.',
+          3: 'Mengutip data namun ada interpretasi yang kurang tepat.',
+          2: 'Menyebut data secara samar tanpa angka yang jelas.',
+          1: 'Tidak menyertakan data dari kasus.'
+        },
+        penalaran: {
+          4: 'Menjelaskan alur sebab-akibat yang runtut, logis, dan mendalam.',
+          3: 'Alur penalaran cukup baik namun ada lompatan logika.',
+          2: 'Penalaran dangkal dan bersifat spekulatif.',
+          1: 'Penalaran tidak logis atau membingungkan.'
+        },
+        keputusanSolusi: {
+          4: 'Memberikan keputusan/solusi yang aplikatif, realistis, dan berbasis bukti.',
+          3: 'Keputusan baik namun kurang mempertimbangkan kendala praktis.',
+          2: 'Keputusan bersifat umum dan tidak menjawab masalah inti.',
+          1: 'Tidak ada keputusan yang jelas.'
+        },
+        refleksi: {
+          4: 'Mampu merefleksikan keterbatasan data dan merumuskan langkah investigasi lanjutan.',
+          3: 'Mampu melihat keterbatasan data dengan cukup baik.',
+          2: 'Refleksi masih minim dan normatif.',
+          1: 'Tidak ada refleksi.'
+        }
+      },
+      qualityCheck: {
+        passed: true,
+        checks: [
+          { label: 'Konteks riil & data tersedia', ok: true },
+          { label: 'Tuntutan bukti & alasan jelas', ok: true },
+          { label: 'Rubrik 4 level lengkap', ok: true }
+        ]
+      }
+    };
+
+    const newQuestions = [...currentAssessment.questions, newQuestion];
+    setCurrentAssessment({
+      ...currentAssessment,
+      questions: newQuestions
+    });
+    setActiveQuestionIndex(newQuestions.length - 1);
+  };
+
+  const handleDeleteQuestion = (indexToDelete: number) => {
+    if (currentAssessment.questions.length <= 1) {
+      alert('Asesmen harus memiliki minimal 1 soal kasus.');
+      return;
+    }
+    const isConfirmed = window.confirm(`Hapus Soal Kasus ${indexToDelete + 1}? Tindakan ini tidak dapat dibatalkan.`);
+    if (!isConfirmed) return;
+
+    const newQuestions = currentAssessment.questions
+      .filter((_, idx) => idx !== indexToDelete)
+      .map((q, idx) => ({ ...q, nomor: idx + 1 }));
+
+    setCurrentAssessment({
+      ...currentAssessment,
+      questions: newQuestions
+    });
+    setActiveQuestionIndex(Math.max(0, Math.min(activeQuestionIndex, newQuestions.length - 1)));
+  };
+
+  const handleDuplicateQuestion = (indexToDuplicate: number) => {
+    const sourceQ = currentAssessment.questions[indexToDuplicate];
+    if (!sourceQ) return;
+    const duplicated: Question = JSON.parse(JSON.stringify(sourceQ));
+    duplicated.id = `q-copy-${Date.now()}`;
+    duplicated.nomor = currentAssessment.questions.length + 1;
+    duplicated.judulKasus = `${sourceQ.judulKasus} (Salinan)`;
+
+    const newQuestions = [...currentAssessment.questions, duplicated];
+    setCurrentAssessment({
+      ...currentAssessment,
+      questions: newQuestions
+    });
+    setActiveQuestionIndex(newQuestions.length - 1);
   };
 
   return (
@@ -270,6 +415,19 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
 
           <button
             type="button"
+            onClick={() => {
+              const teacherWa = localStorage.getItem('teacher_phone_wa') || '';
+              generateInteractiveHtmlAssessment(currentAssessment, teacherWa);
+            }}
+            className="px-3.5 py-2 rounded-xl bg-white hover:bg-emerald-50 text-emerald-900 font-bold text-xs flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+            title="Download file .html yang bisa dibuka di HP Android/Laptop siswa tanpa butuh internet/login Google (bebas 403)"
+          >
+            <Download className="w-3.5 h-3.5 text-emerald-700" />
+            <span>Unduh Soal Siswa (.html)</span>
+          </button>
+
+          <button
+            type="button"
             onClick={handleOpenShare}
             className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
           >
@@ -296,18 +454,18 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 text-xs">
           <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
             <span className="text-slate-400 dark:text-slate-500 block mb-0.5">Tujuan Pembelajaran:</span>
-            <span className="font-medium text-slate-800 dark:text-slate-200">{currentAssessment.config.tujuanPembelajaran}</span>
+            <span className="font-medium text-slate-800 dark:text-slate-200">{currentAssessment.config?.tujuanPembelajaran || 'Analisis data kontekstual'}</span>
           </div>
           <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
             <span className="text-slate-400 dark:text-slate-500 block mb-0.5">Sumber Boleh Digunakan:</span>
             <span className="font-semibold text-emerald-800 dark:text-emerald-300">
-              {currentAssessment.config.sumberBoleh.join(', ')} (Open Book)
+              {(Array.isArray(currentAssessment.config?.sumberBoleh) ? currentAssessment.config.sumberBoleh : ['Buku', 'Catatan', 'Internet', 'AI']).join(', ')} (Open Book)
             </span>
           </div>
           <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
             <span className="text-slate-400 dark:text-slate-500 block mb-0.5">Waktu & Bentuk:</span>
             <span className="font-medium text-slate-800 dark:text-slate-200">
-              {currentAssessment.config.waktuPengerjaan} Menit • {currentAssessment.config.bentukSoal}
+              {currentAssessment.config?.waktuPengerjaan || 60} Menit • {currentAssessment.config?.bentukSoal || 'studi kasus'}
             </span>
           </div>
         </div>
@@ -323,10 +481,10 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
             </div>
             <div className="flex items-center gap-2">
               <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-emerald-600 text-white shadow-xs">
-                {currentAssessment.config.fase || 'Fase C / D'}
+                {currentAssessment.config?.fase || 'Fase C / D'}
               </span>
               <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">
-                {currentAssessment.config.jenjang} Kelas {currentAssessment.config.kelas}
+                {currentAssessment.config?.jenjang || 'SD'} Kelas {currentAssessment.config?.kelas || 'V'}
               </span>
             </div>
           </div>
@@ -337,9 +495,9 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                 Elemen Capaian Pembelajaran (CP)
               </span>
               <p className="font-semibold text-slate-800 dark:text-slate-200">
-                {currentAssessment.config.elemenCP || 'Keterampilan Proses & Pemahaman Konseptual'}
+                {currentAssessment.config?.elemenCP || 'Keterampilan Proses & Pemahaman Konseptual'}
               </p>
-              {currentAssessment.config.capaianPembelajaran && (
+              {currentAssessment.config?.capaianPembelajaran && (
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 line-clamp-3">
                   {currentAssessment.config.capaianPembelajaran}
                 </p>
@@ -414,7 +572,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
       {/* Question Selector Tabs */}
       <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1">
         <div className="flex items-center gap-2">
-          {currentAssessment.questions.map((q, idx) => (
+          {questions.map((q, idx) => (
             <button
               key={q.id || idx}
               onClick={() => setActiveQuestionIndex(idx)}
@@ -430,6 +588,16 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
               </span>
             </button>
           ))}
+
+          <button
+            type="button"
+            onClick={handleAddQuestion}
+            className="px-3 py-2 rounded-xl text-xs font-bold bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+            title="Tambah Soal Kasus Baru"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Tambah Soal</span>
+          </button>
         </div>
 
         {/* Regenerate Question Bar */}
@@ -446,7 +614,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
 
           <button
             onClick={handleRegenerateQuestion}
-            disabled={isRegenerating}
+            disabled={isRegenerating || !currentQ}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition-colors disabled:opacity-50 cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isRegenerating ? 'animate-spin' : ''}`} />
@@ -454,6 +622,29 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
           </button>
         </div>
       </div>
+
+      {/* EMPTY QUESTIONS FALLBACK CARD */}
+      {questions.length === 0 && (
+        <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 border border-slate-200 dark:border-slate-800 shadow-sm text-center space-y-4">
+          <div className="w-12 h-12 mx-auto rounded-2xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+            <AlertCircle className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h4 className="font-bold text-slate-900 dark:text-white text-base">Belum Ada Butir Soal</h4>
+            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
+              Asesmen ini belum memiliki soal kontekstual. Tambahkan butir soal baru untuk mulai menyusun.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleAddQuestion}
+            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs inline-flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Tambah Soal Pertama</span>
+          </button>
+        </div>
+      )}
 
       {/* ACTIVE QUESTION EDITOR CARD */}
       {currentQ && (
@@ -466,15 +657,37 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
               </label>
               <input
                 type="text"
-                value={currentQ.judulKasus}
+                value={currentQ.judulKasus || ''}
                 onChange={(e) => handleUpdateQuestion({ judulKasus: e.target.value })}
                 className="w-full font-bold text-lg text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-700 focus:border-emerald-500 focus:outline-none pb-1 bg-transparent"
               />
             </div>
             <div className="flex items-center gap-2">
               <span className="text-xs px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium">
-                {currentQ.bentukSoal}
+                {currentQ.bentukSoal || 'studi kasus'}
               </span>
+
+              <button
+                type="button"
+                onClick={() => handleDuplicateQuestion(activeQuestionIndex)}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
+                title="Duplikat Soal Ini"
+              >
+                <CopyPlus className="w-3.5 h-3.5 text-slate-500" />
+                <span className="hidden sm:inline">Duplikat</span>
+              </button>
+
+              {questions.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => handleDeleteQuestion(activeQuestionIndex)}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 border border-rose-200 dark:border-rose-900/50 transition-colors cursor-pointer"
+                  title="Hapus Soal Kasus Ini"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Hapus Soal</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -486,7 +699,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
             </label>
             <textarea
               rows={2}
-              value={currentQ.konteks}
+              value={currentQ.konteks || ''}
               onChange={(e) => handleUpdateQuestion({ konteks: e.target.value })}
               className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white text-xs sm:text-sm focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors"
             />
@@ -507,16 +720,16 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
               </label>
               <textarea
                 rows={2}
-                value={currentQ.dataInformasi.konten}
+                value={currentQ.dataInformasi?.konten || ''}
                 onChange={(e) => handleUpdateQuestion({
-                  dataInformasi: { ...currentQ.dataInformasi, konten: e.target.value }
+                  dataInformasi: { ...(currentQ.dataInformasi || { tipe: 'teks_campuran' as const }), konten: e.target.value }
                 })}
                 className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors"
               />
             </div>
 
             {/* Render Editable Table if present */}
-            {currentQ.dataInformasi.tabelData && (
+            {currentQ.dataInformasi?.tabelData && Array.isArray(currentQ.dataInformasi.tabelData.headers) && Array.isArray(currentQ.dataInformasi.tabelData.baris) && (
               <div className="space-y-2">
                 <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 flex items-center gap-1">
                   <TableIcon className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
@@ -534,7 +747,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {currentQ.dataInformasi.tabelData.baris.map((row, rIdx) => (
                         <tr key={rIdx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
-                          {row.map((cell, cIdx) => (
+                          {Array.isArray(row) && row.map((cell, cIdx) => (
                             <td key={cIdx} className="p-2.5 font-medium text-slate-800 dark:text-slate-200">{cell}</td>
                           ))}
                         </tr>
@@ -545,8 +758,26 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
               </div>
             )}
 
+            {/* Live Data Chart Preview & Interactive Analysis */}
+            {(currentQ.dataInformasi?.visualisasiGrafik || currentQ.dataInformasi?.tabelData) && (
+              <div className="space-y-2 pt-1">
+                <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+                  <BarChart3 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  Pratinjau Grafik Data Nyata untuk Siswa:
+                </span>
+                <DataChartViewer
+                  grafikData={currentQ.dataInformasi?.visualisasiGrafik}
+                  grafik={currentQ.dataInformasi?.visualisasiGrafik}
+                  tabelData={currentQ.dataInformasi?.tabelData}
+                  judulKasus={currentQ.judulKasus}
+                  allowToggleView={true}
+                  defaultView="chart"
+                />
+              </div>
+            )}
+
             {/* Render Multi-perspective Quotes if present */}
-            {currentQ.dataInformasi.kutipanPihak && currentQ.dataInformasi.kutipanPihak.length > 0 && (
+            {Array.isArray(currentQ.dataInformasi?.kutipanPihak) && currentQ.dataInformasi.kutipanPihak.length > 0 && (
               <div className="space-y-2">
                 <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 flex items-center gap-1">
                   <MessageSquare className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
@@ -556,10 +787,10 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                   {currentQ.dataInformasi.kutipanPihak.map((pihak, pIdx) => (
                     <div key={pIdx} className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs space-y-1">
                       <div className="flex items-center justify-between font-bold text-slate-900 dark:text-white">
-                        <span>{pihak.nama}</span>
-                        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal">{pihak.peran}</span>
+                        <span>{pihak?.nama || 'Narasumber'}</span>
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal">{pihak?.peran || ''}</span>
                       </div>
-                      <p className="text-slate-600 dark:text-slate-300 italic">“{pihak.pernyataan}”</p>
+                      <p className="text-slate-600 dark:text-slate-300 italic">“{pihak?.pernyataan || ''}”</p>
                     </div>
                   ))}
                 </div>
@@ -575,7 +806,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
             </label>
             <input
               type="text"
-              value={currentQ.masalah}
+              value={currentQ.masalah || ''}
               onChange={(e) => handleUpdateQuestion({ masalah: e.target.value })}
               className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white text-xs sm:text-sm focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors"
             />
@@ -594,7 +825,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
               </span>
               <textarea
                 rows={2}
-                value={currentQ.pertanyaanUtama}
+                value={currentQ.pertanyaanUtama || ''}
                 onChange={(e) => handleUpdateQuestion({ pertanyaanUtama: e.target.value })}
                 className="w-full p-2.5 rounded-xl border border-amber-300 dark:border-amber-700/80 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors"
               />
@@ -607,7 +838,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                 </span>
                 <input
                   type="text"
-                  value={currentQ.permintaanBukti}
+                  value={currentQ.permintaanBukti || ''}
                   onChange={(e) => handleUpdateQuestion({ permintaanBukti: e.target.value })}
                   className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors"
                 />
@@ -619,7 +850,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                 </span>
                 <input
                   type="text"
-                  value={currentQ.permintaanAlasan}
+                  value={currentQ.permintaanAlasan || ''}
                   onChange={(e) => handleUpdateQuestion({ permintaanAlasan: e.target.value })}
                   className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors"
                 />
@@ -632,7 +863,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
               </span>
               <input
                 type="text"
-                value={currentQ.refleksi}
+                value={currentQ.refleksi || ''}
                 onChange={(e) => handleUpdateQuestion({ refleksi: e.target.value })}
                 className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors"
               />
@@ -647,7 +878,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
             </label>
             <textarea
               rows={3}
-              value={currentQ.kunciJawaban}
+              value={currentQ.kunciJawaban || ''}
               onChange={(e) => handleUpdateQuestion({ kunciJawaban: e.target.value })}
               className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white text-xs sm:text-sm focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors"
             />
@@ -660,14 +891,15 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
               Petunjuk Pemandu Berpikir (Scaffolding Tanpa Membocorkan Jawaban)
             </label>
             <div className="space-y-2">
-              {currentQ.petunjukPemandu.map((hint, hIdx) => (
+              {(Array.isArray(currentQ.petunjukPemandu) ? currentQ.petunjukPemandu : [currentQ.petunjukPemandu || 'Perhatikan data dan fakta yang disajikan dalam kasus.']).map((hint, hIdx) => (
                 <div key={hIdx} className="flex items-center gap-2">
                   <span className="text-xs text-slate-400 dark:text-slate-500 font-mono w-4">{hIdx + 1}.</span>
                   <input
                     type="text"
-                    value={hint}
+                    value={hint || ''}
                     onChange={(e) => {
-                      const newHints = [...currentQ.petunjukPemandu];
+                      const curr = Array.isArray(currentQ.petunjukPemandu) ? currentQ.petunjukPemandu : [];
+                      const newHints = [...curr];
                       newHints[hIdx] = e.target.value;
                       handleUpdateQuestion({ petunjukPemandu: newHints });
                     }}
@@ -695,7 +927,7 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                 { key: 'keputusanSolusi', label: '4. Keputusan / Solusi' },
                 { key: 'refleksi', label: '5. Refleksi Keterbatasan' }
               ].map(aspect => {
-                const item = (currentQ.rubrik as any)[aspect.key];
+                const item = (currentQ.rubrik as any)?.[aspect.key] || {};
                 return (
                   <div key={aspect.key} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-2">
                     <span className="font-bold text-slate-900 dark:text-white block border-b border-slate-200 dark:border-slate-700 pb-1">
@@ -704,19 +936,19 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
                     <div className="space-y-1.5 text-[11px]">
                       <div>
                         <span className="font-bold text-emerald-700 dark:text-emerald-400">Skor 4:</span>
-                        <p className="text-slate-600 dark:text-slate-300 line-clamp-3">{item?.[4]}</p>
+                        <p className="text-slate-600 dark:text-slate-300 line-clamp-3">{item?.[4] || 'Sangat mendalam'}</p>
                       </div>
                       <div>
                         <span className="font-bold text-sky-700 dark:text-sky-400">Skor 3:</span>
-                        <p className="text-slate-600 dark:text-slate-300 line-clamp-2">{item?.[3]}</p>
+                        <p className="text-slate-600 dark:text-slate-300 line-clamp-2">{item?.[3] || 'Baik'}</p>
                       </div>
                       <div>
                         <span className="font-bold text-amber-700 dark:text-amber-400">Skor 2:</span>
-                        <p className="text-slate-600 dark:text-slate-300 line-clamp-2">{item?.[2]}</p>
+                        <p className="text-slate-600 dark:text-slate-300 line-clamp-2">{item?.[2] || 'Cukup'}</p>
                       </div>
                       <div>
                         <span className="font-bold text-rose-700 dark:text-rose-400">Skor 1:</span>
-                        <p className="text-slate-600 dark:text-slate-300 line-clamp-2">{item?.[1]}</p>
+                        <p className="text-slate-600 dark:text-slate-300 line-clamp-2">{item?.[1] || 'Kurang'}</p>
                       </div>
                     </div>
                   </div>

@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { X, Printer, Download, FileText, Loader2 } from 'lucide-react';
+import { X, Printer, Download, FileText, Loader2, CheckCircle2, AlertCircle, ExternalLink } from 'lucide-react';
 import { Assessment } from '../types';
 import { 
   generateAssessmentWord, 
-  exportElementToPdf, 
+  generateAssessmentPdf, 
   triggerReliablePrint, 
   sanitizeFilename 
 } from '../utils/exportReport';
@@ -21,27 +21,67 @@ export const PrintAssessmentModal: React.FC<PrintAssessmentModalProps> = ({
 }) => {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [pdfStatus, setPdfStatus] = useState('');
+  const [feedbackNotice, setFeedbackNotice] = useState<{ type: 'success' | 'warning' | 'error'; message: string } | null>(null);
 
   if (!isOpen || !assessment) return null;
 
   const handlePrint = () => {
-    triggerReliablePrint('assessment-printable-sheet');
+    setFeedbackNotice(null);
+    const res = triggerReliablePrint('assessment-printable-sheet');
+    if (!res.success && res.error) {
+      setFeedbackNotice({
+        type: 'warning',
+        message: 'Dialog cetak dibatasi oleh peramban di mode pratinjau. Kami sarankan langsung klik tombol "Simpan PDF (.pdf)" di sebelah kanan untuk mengunduh dokumen.'
+      });
+    } else {
+      setFeedbackNotice({
+        type: 'success',
+        message: '✓ Mengirim lembar soal ke dialog cetak...'
+      });
+      setTimeout(() => setFeedbackNotice(null), 3500);
+    }
   };
 
   const handleSaveWord = () => {
-    generateAssessmentWord(assessment);
+    try {
+      generateAssessmentWord(assessment);
+      setFeedbackNotice({
+        type: 'success',
+        message: '✓ Berkas Microsoft Word (.doc) berhasil diunduh!'
+      });
+      setTimeout(() => setFeedbackNotice(null), 3500);
+    } catch (e) {
+      console.error('Word error:', e);
+      setFeedbackNotice({
+        type: 'error',
+        message: 'Gagal mengunduh berkas Word.'
+      });
+    }
   };
 
   const handleSavePdf = async () => {
     try {
       setIsExportingPdf(true);
-      setPdfStatus('Menyiapkan PDF...');
+      setPdfStatus('Menyusun PDF vektor...');
+      setFeedbackNotice(null);
       const fileName = `Lembar_Soal_${sanitizeFilename(assessment.judul || 'Asesmen')}.pdf`;
-      await exportElementToPdf('assessment-printable-sheet', fileName, (status) => {
+      
+      // Direct high-fidelity vector PDF generation - 100% reliable
+      await generateAssessmentPdf(assessment, fileName, (status) => {
         setPdfStatus(status);
       });
+
+      setFeedbackNotice({
+        type: 'success',
+        message: '✓ Berkas PDF lembar soal berhasil diunduh!'
+      });
+      setTimeout(() => setFeedbackNotice(null), 3500);
     } catch (e) {
       console.error('PDF error:', e);
+      setFeedbackNotice({
+        type: 'error',
+        message: 'Gagal mengekspor PDF. Anda dapat menggunakan tombol Simpan Word (.doc) sebagai alternatif cetak.'
+      });
     } finally {
       setIsExportingPdf(false);
       setPdfStatus('');
@@ -55,7 +95,7 @@ export const PrintAssessmentModal: React.FC<PrintAssessmentModalProps> = ({
         <div className="sticky top-0 z-10 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 print:hidden">
           <div>
             <h3 className="font-bold text-slate-900 dark:text-white text-sm">Pratinjau Lembar Soal Asesmen</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Format resmi tes tertulis siap cetak atau ekspor</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Format resmi tes tertulis siap cetak atau ekspor PDF</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <button
@@ -70,17 +110,17 @@ export const PrintAssessmentModal: React.FC<PrintAssessmentModalProps> = ({
             <button
               onClick={handleSavePdf}
               disabled={isExportingPdf}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/50 border border-rose-200 dark:border-rose-800 font-bold text-xs shadow-2xs transition-colors cursor-pointer"
-              title="Unduh lembar soal sebagai PDF (.pdf)"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-sm transition-colors cursor-pointer"
+              title="Unduh langsung sebagai dokumen PDF (.pdf) resmi"
             >
               {isExportingPdf ? (
                 <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-600 dark:text-rose-400" />
-                  <span>{pdfStatus || 'Memproses PDF...'}</span>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                  <span>{pdfStatus || 'Menyiapkan PDF...'}</span>
                 </>
               ) : (
                 <>
-                  <Download className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+                  <Download className="w-3.5 h-3.5 text-white" />
                   <span>Simpan PDF (.pdf)</span>
                 </>
               )}
@@ -88,11 +128,13 @@ export const PrintAssessmentModal: React.FC<PrintAssessmentModalProps> = ({
 
             <button
               onClick={handlePrint}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 dark:bg-emerald-600 hover:bg-slate-800 dark:hover:bg-emerald-500 text-white font-bold text-xs shadow-sm transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-white font-bold text-xs shadow-sm transition-colors cursor-pointer"
+              title="Kirim ke dialog cetak / printer peramban"
             >
-              <Printer className="w-4 h-4 text-emerald-400 dark:text-white" />
+              <Printer className="w-4 h-4 text-emerald-400" />
               <span>Cetak / Print</span>
             </button>
+
             <button
               onClick={onClose}
               className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
@@ -101,6 +143,42 @@ export const PrintAssessmentModal: React.FC<PrintAssessmentModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Feedback Alert Notice */}
+        {feedbackNotice && (
+          <div className={`mx-6 mt-4 p-3 rounded-xl text-xs flex items-center gap-2 print:hidden ${
+            feedbackNotice.type === 'success' 
+              ? 'bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200' 
+              : feedbackNotice.type === 'warning'
+                ? 'bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200'
+                : 'bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-200'
+          }`}>
+            {feedbackNotice.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+            )}
+            <div className="flex-1">
+              <span>{feedbackNotice.message}</span>
+            </div>
+            {feedbackNotice.type === 'warning' && (
+              <button
+                type="button"
+                onClick={handleSavePdf}
+                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] shrink-0 cursor-pointer"
+              >
+                Unduh PDF
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setFeedbackNotice(null)}
+              className="text-slate-500 hover:text-slate-800 ml-1 font-bold"
+            >
+              ×
+            </button>
+          </div>
+        )}
 
         {/* Printable Document Body - Kept white paper sheet for authentic print WYSIWYG */}
         <div className="p-4 sm:p-6">
@@ -180,7 +258,7 @@ export const PrintAssessmentModal: React.FC<PrintAssessmentModalProps> = ({
                   <span className="font-bold block">Data & Informasi Pengamatan:</span>
                   <p>{q.dataInformasi.konten}</p>
 
-                  {q.dataInformasi.tabelData && (
+                  {q.dataInformasi?.tabelData && Array.isArray(q.dataInformasi.tabelData.headers) && Array.isArray(q.dataInformasi.tabelData.baris) && (
                     <table className="w-full border-collapse border border-slate-400 text-xs my-2">
                       <thead>
                         <tr className="bg-slate-100">
@@ -192,7 +270,7 @@ export const PrintAssessmentModal: React.FC<PrintAssessmentModalProps> = ({
                       <tbody>
                         {q.dataInformasi.tabelData.baris.map((row, rIdx) => (
                           <tr key={rIdx}>
-                            {row.map((cell, cIdx) => (
+                            {Array.isArray(row) && row.map((cell, cIdx) => (
                               <td key={cIdx} className="border border-slate-400 p-1.5">{cell}</td>
                             ))}
                           </tr>
@@ -201,31 +279,33 @@ export const PrintAssessmentModal: React.FC<PrintAssessmentModalProps> = ({
                     </table>
                   )}
 
-                  {q.dataInformasi.visualisasiGrafik && (
+                  {q.dataInformasi?.visualisasiGrafik && (
                     <div className="border border-slate-300 bg-slate-50/70 p-2.5 rounded text-xs my-2 space-y-1">
                       <span className="font-bold flex items-center gap-1.5 text-slate-800">
-                        <span>📊 Visualisasi Grafik Data: {q.dataInformasi.visualisasiGrafik.judul}</span>
-                        <span className="text-[10px] font-normal text-slate-500">({q.dataInformasi.visualisasiGrafik.tipeGrafik.toUpperCase()})</span>
+                        <span>📊 Visualisasi Grafik Data: {q.dataInformasi.visualisasiGrafik.judulGrafik}</span>
+                        <span className="text-[10px] font-normal text-slate-500">({(q.dataInformasi.visualisasiGrafik.tipeGrafik || 'bar').toUpperCase()})</span>
                       </span>
-                      {q.dataInformasi.visualisasiGrafik.keterangan && (
-                        <p className="text-[11px] text-slate-600 italic">{q.dataInformasi.visualisasiGrafik.keterangan}</p>
+                      {q.dataInformasi.visualisasiGrafik.deskripsiGrafik && (
+                        <p className="text-[11px] text-slate-600 italic">{q.dataInformasi.visualisasiGrafik.deskripsiGrafik}</p>
                       )}
-                      <div className="flex flex-wrap gap-2 pt-1 text-[11px]">
-                        {q.dataInformasi.visualisasiGrafik.dataPoints.map((dp, dpIdx) => (
-                          <span key={dpIdx} className="bg-white border border-slate-300 px-2 py-0.5 rounded font-mono">
-                            <strong>{dp.label}:</strong> {dp.nilai} {q.dataInformasi.visualisasiGrafik?.unit || ''}
-                          </span>
-                        ))}
-                      </div>
+                      {Array.isArray(q.dataInformasi.visualisasiGrafik.datasets) && (
+                        <div className="flex flex-wrap gap-2 pt-1 text-[11px]">
+                          {q.dataInformasi.visualisasiGrafik.datasets.map((ds, dsIdx) => (
+                            <span key={dsIdx} className="bg-white border border-slate-300 px-2 py-0.5 rounded font-mono">
+                              <strong>{ds?.nama}:</strong> {Array.isArray(ds?.nilai) ? ds.nilai.join(', ') : ''}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
 
-                  {q.dataInformasi.kutipanPihak && q.dataInformasi.kutipanPihak.length > 0 && (
+                  {Array.isArray(q.dataInformasi?.kutipanPihak) && q.dataInformasi.kutipanPihak.length > 0 && (
                     <div className="grid grid-cols-2 gap-2 my-2">
                       {q.dataInformasi.kutipanPihak.map((pihak, pIdx) => (
                         <div key={pIdx} className="border border-slate-300 p-2 rounded text-[11px]">
-                          <span className="font-bold">{pihak.nama} ({pihak.peran}):</span>
-                          <p className="italic">"{pihak.pernyataan}"</p>
+                          <span className="font-bold">{pihak?.nama} ({pihak?.peran}):</span>
+                          <p className="italic">"{pihak?.pernyataan}"</p>
                         </div>
                       ))}
                     </div>

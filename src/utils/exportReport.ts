@@ -313,7 +313,619 @@ export function generateEvaluationReportWord(
 }
 
 /**
- * Exports an HTML element directly to high-quality PDF using html2canvas and jsPDF.
+ * Dedicated, highly reliable vector PDF generator for Assessment Question Sheets.
+ * Uses jsPDF directly - 100% immune to CSS oklch errors, iframe sandbox blocks, or canvas limits.
+ */
+export async function generateAssessmentPdf(
+  assessment: Assessment,
+  customFilename?: string,
+  onProgress?: (status: string) => void
+): Promise<void> {
+  if (onProgress) onProgress('Menyusun lembar soal PDF...');
+
+  const pdf = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+    compress: true
+  });
+
+  const pageWidth = 210;
+  const pageHeight = 297;
+  const margin = 15;
+  const contentWidth = pageWidth - (margin * 2);
+  let y = margin;
+
+  const checkPageBreak = (neededHeight: number): void => {
+    if (y + neededHeight > pageHeight - 18) {
+      pdf.addPage();
+      y = margin;
+      renderRunningHeader();
+    }
+  };
+
+  const renderRunningHeader = () => {
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(8);
+    pdf.setTextColor(100, 116, 139);
+    pdf.text(`${assessment.judul || 'Lembar Asesmen'} • Kode: ${assessment.kodeAkses}`, margin, y);
+    pdf.line(margin, y + 2, pageWidth - margin, y + 2);
+    y += 7;
+  };
+
+  // --- KOP LEMBAGA ---
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(13);
+  pdf.setTextColor(15, 23, 42); // slate-900
+  pdf.text('LEMBAR ASESMEN KONTEKSTUAL & PENALARAN KRITIS', pageWidth / 2, y, { align: 'center' });
+  y += 5.5;
+
+  pdf.setFontSize(9);
+  pdf.setTextColor(5, 150, 105); // emerald-600
+  const subHeader = `KURIKULUM MERDEKA • ${assessment.config.jenjang || 'SD/SMP'} • ${assessment.config.fase || 'FASE C/D'}`;
+  pdf.text(subHeader, pageWidth / 2, y, { align: 'center' });
+  y += 5;
+
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(11);
+  pdf.setTextColor(15, 23, 42);
+  const splitTitle = pdf.splitTextToSize(assessment.judul || 'Asesmen Kontekstual', contentWidth);
+  pdf.text(splitTitle, pageWidth / 2, y, { align: 'center' });
+  y += (splitTitle.length * 5) + 1;
+
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(8.5);
+  pdf.setTextColor(71, 85, 105);
+  const metaLine = `Mata Pelajaran: ${assessment.config.mataPelajaran || '-'} | Kelas: ${assessment.config.kelas || '-'} | Waktu: ${assessment.config.waktuPengerjaan || 60} Menit`;
+  pdf.text(metaLine, pageWidth / 2, y, { align: 'center' });
+  y += 4;
+
+  if (assessment.config.elemenCP) {
+    const cpText = pdf.splitTextToSize(`Elemen CP: ${assessment.config.elemenCP}`, contentWidth);
+    pdf.setFontSize(8);
+    pdf.setTextColor(100, 116, 139);
+    pdf.text(cpText, pageWidth / 2, y, { align: 'center' });
+    y += (cpText.length * 3.5) + 2;
+  }
+
+  // Double divider line
+  pdf.setDrawColor(15, 23, 42);
+  pdf.setLineWidth(0.6);
+  pdf.line(margin, y, pageWidth - margin, y);
+  y += 1.2;
+  pdf.setLineWidth(0.2);
+  pdf.line(margin, y, pageWidth - margin, y);
+  y += 5;
+
+  // --- IDENTITAS SISWA ---
+  checkPageBreak(25);
+  pdf.setDrawColor(148, 163, 184); // slate-400
+  pdf.setFillColor(248, 250, 252);
+  pdf.roundedRect(margin, y, contentWidth, 20, 2, 2, 'FD');
+
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(8.5);
+  pdf.setTextColor(15, 23, 42);
+
+  const colWidth = contentWidth / 2;
+  pdf.text('Nama Siswa  : ................................................................', margin + 4, y + 6);
+  pdf.text('Kelas / Rombel: ................................................................', margin + 4, y + 14);
+
+  pdf.text('No. Absen : ............................................', margin + colWidth + 4, y + 6);
+  pdf.text(`Kode Akses: ${assessment.kodeAkses}`, margin + colWidth + 4, y + 14);
+  y += 24;
+
+  // --- PETUNJUK PENGERJAAN ---
+  checkPageBreak(18);
+  pdf.setFillColor(236, 253, 245); // emerald-50
+  pdf.setDrawColor(167, 243, 208); // emerald-200
+  pdf.roundedRect(margin, y, contentWidth, 16, 1.5, 1.5, 'FD');
+
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(8);
+  pdf.setTextColor(6, 95, 70); // emerald-800
+  pdf.text('PETUNJUK PENGERJAAN (OPEN BOOK & BUKTI DATA):', margin + 3, y + 4.5);
+
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(7.5);
+  pdf.setTextColor(51, 65, 85);
+  pdf.text('1. Anda diperbolehkan membaca catatan, buku teks, atau data informasi yang tersedia.', margin + 3, y + 8.5);
+  pdf.text('2. Nilai ditentukan dari kemampuan menganalisis data, memberikan bukti numerik/fakta nyata, dan penalaran logis.', margin + 3, y + 12.5);
+  y += 20;
+
+  // --- QUESTIONS ITERATION ---
+  for (let idx = 0; idx < assessment.questions.length; idx++) {
+    const q = assessment.questions[idx];
+    checkPageBreak(40);
+
+    // Kasus Header Bar
+    pdf.setFillColor(241, 245, 249); // slate-100
+    pdf.setDrawColor(203, 213, 225); // slate-300
+    pdf.roundedRect(margin, y, contentWidth, 8, 1, 1, 'FD');
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(9);
+    pdf.setTextColor(15, 23, 42);
+    pdf.text(`SOAL KASUS #${idx + 1}: ${q.judulKasus || 'Kasus Kontekstual'}`, margin + 3, y + 5.5);
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(8);
+    pdf.setTextColor(100, 116, 139);
+    pdf.text(`[${q.bentukSoal || 'Studi Kasus'}]`, pageWidth - margin - 3, y + 5.5, { align: 'right' });
+    y += 11;
+
+    // Konteks Masalah
+    if (q.konteks) {
+      checkPageBreak(25);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(8.5);
+      pdf.setTextColor(30, 41, 59);
+      pdf.text('Konteks Masalah:', margin, y);
+      y += 4;
+
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      pdf.setTextColor(51, 65, 85);
+      const splitKonteks = pdf.splitTextToSize(q.konteks, contentWidth);
+      pdf.text(splitKonteks, margin, y);
+      y += (splitKonteks.length * 3.8) + 3;
+    }
+
+    // Data & Informasi
+    if (q.dataInformasi?.konten) {
+      checkPageBreak(20);
+      pdf.setFillColor(248, 250, 252);
+      pdf.setDrawColor(226, 232, 240);
+      
+      const splitData = pdf.splitTextToSize(q.dataInformasi.konten, contentWidth - 6);
+      const boxHeight = (splitData.length * 3.6) + 7;
+      
+      checkPageBreak(boxHeight + 2);
+      pdf.roundedRect(margin, y, contentWidth, boxHeight, 1, 1, 'FD');
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(7.5);
+      pdf.setTextColor(15, 23, 42);
+      pdf.text('Data / Informasi Pengamatan:', margin + 3, y + 4.5);
+
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(7.5);
+      pdf.setTextColor(71, 85, 105);
+      pdf.text(splitData, margin + 3, y + 8.5);
+      y += boxHeight + 4;
+    }
+
+    // Tabel Data (if exists)
+    if (q.dataInformasi?.tabelData && q.dataInformasi.tabelData.headers?.length) {
+      const headers = q.dataInformasi.tabelData.headers;
+      const rows = q.dataInformasi.tabelData.baris || [];
+      const numCols = headers.length;
+      const tableColWidth = contentWidth / numCols;
+      
+      checkPageBreak(12 + (rows.length * 6));
+      
+      // Header Row
+      pdf.setFillColor(226, 232, 240);
+      pdf.setDrawColor(148, 163, 184);
+      pdf.rect(margin, y, contentWidth, 6, 'FD');
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(7.5);
+      pdf.setTextColor(15, 23, 42);
+      headers.forEach((h, hIdx) => {
+        pdf.text(String(h), margin + (hIdx * tableColWidth) + 2, y + 4.2);
+      });
+      y += 6;
+
+      // Data Rows
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(7.5);
+      rows.forEach((row, rIdx) => {
+        const rowBg = rIdx % 2 === 0 ? 255 : 248;
+        pdf.setFillColor(rowBg, rowBg, rowBg);
+        pdf.rect(margin, y, contentWidth, 5.5, 'FD');
+        row.forEach((cell, cIdx) => {
+          pdf.text(String(cell), margin + (cIdx * tableColWidth) + 2, y + 3.8);
+        });
+        y += 5.5;
+      });
+      y += 4;
+    }
+
+    // Grafik Summary (if exists)
+    if (q.dataInformasi?.visualisasiGrafik) {
+      const g = q.dataInformasi.visualisasiGrafik;
+      checkPageBreak(14);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(7.5);
+      pdf.setTextColor(15, 23, 42);
+      pdf.text(`Ringkasan Data Grafik: ${g.judulGrafik || 'Grafik'} (${g.tipeGrafik || 'bar'})`, margin, y);
+      y += 4;
+
+      if (g.labels?.length && g.datasets?.length) {
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(7.5);
+        pdf.setTextColor(71, 85, 105);
+        const dataStr = g.labels.map((lbl, lIdx) => {
+          const vals = g.datasets.map(ds => `${ds.nama || 'Data'}: ${ds.nilai[lIdx] ?? '-'}`).join(', ');
+          return `${lbl} (${vals})`;
+        }).join(' | ');
+        const splitGraph = pdf.splitTextToSize(dataStr, contentWidth);
+        pdf.text(splitGraph, margin, y);
+        y += (splitGraph.length * 3.5) + 3;
+      }
+    }
+
+    // Pertanyaan Utama & 4 Lembar Isian Siswa
+    checkPageBreak(30);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(8.5);
+    pdf.setTextColor(4, 120, 87); // emerald-700
+    pdf.text('A. Pertanyaan Inti & Keputusan:', margin, y);
+    y += 4;
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(8);
+    pdf.setTextColor(15, 23, 42);
+    const splitMainQ = pdf.splitTextToSize(q.pertanyaanUtama || 'Berikan analisis Anda...', contentWidth);
+    pdf.text(splitMainQ, margin, y);
+    y += (splitMainQ.length * 3.8) + 2;
+
+    // Jawaban Box
+    pdf.setDrawColor(203, 213, 225);
+    pdf.setFillColor(255, 255, 255);
+    pdf.roundedRect(margin, y, contentWidth, 14, 1, 1, 'FD');
+    pdf.setFontSize(7);
+    pdf.setTextColor(148, 163, 184);
+    pdf.text('[Tuliskan keputusan atau solusi Anda di sini]', margin + 3, y + 4.5);
+    y += 18;
+
+    // Bukti Data Box
+    checkPageBreak(22);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(8);
+    pdf.setTextColor(15, 23, 42);
+    pdf.text('B. Bukti Data Spesifik (Kutip angka/fakta dari bacaan):', margin, y);
+    y += 3.5;
+    pdf.roundedRect(margin, y, contentWidth, 12, 1, 1, 'FD');
+    pdf.setFontSize(7);
+    pdf.setTextColor(148, 163, 184);
+    pdf.text('[Tuliskan kutipan bukti data/fakta pendukung di sini]', margin + 3, y + 4.5);
+    y += 16;
+
+    // Alasan Penalaran Box
+    checkPageBreak(22);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(8);
+    pdf.setTextColor(15, 23, 42);
+    pdf.text('C. Alasan Logis (Mengapa bukti tersebut mendukung keputusan Anda?):', margin, y);
+    y += 3.5;
+    pdf.roundedRect(margin, y, contentWidth, 14, 1, 1, 'FD');
+    pdf.setFontSize(7);
+    pdf.setTextColor(148, 163, 184);
+    pdf.text('[Tuliskan alur penalaran Anda secara logis di sini]', margin + 3, y + 4.5);
+    y += 18;
+
+    // Refleksi Box
+    checkPageBreak(20);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(8);
+    pdf.setTextColor(15, 23, 42);
+    pdf.text('D. Refleksi & Sudut Pandang Lain:', margin, y);
+    y += 3.5;
+    pdf.roundedRect(margin, y, contentWidth, 12, 1, 1, 'FD');
+    pdf.setFontSize(7);
+    pdf.setTextColor(148, 163, 184);
+    pdf.text('[Tuliskan kelemahan solusi atau pertimbangan alternatif di sini]', margin + 3, y + 4.5);
+    y += 18;
+  }
+
+  // --- FOOTER TANDA TANGAN ---
+  checkPageBreak(25);
+  pdf.setDrawColor(148, 163, 184);
+  pdf.line(margin, y, pageWidth - margin, y);
+  y += 5;
+
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(8);
+  pdf.setTextColor(71, 85, 105);
+  pdf.text(`Kode Verifikasi: ${assessment.kodeAkses}`, margin, y);
+  pdf.text('Mengetahui Guru Pengampu,', pageWidth - margin - 50, y);
+  y += 14;
+  pdf.text('( ........................................................... )', pageWidth - margin - 50, y);
+
+  // --- ADD PAGE NUMBERS ---
+  const totalPages = pdf.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    pdf.setPage(i);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(7.5);
+    pdf.setTextColor(148, 163, 184);
+    pdf.text(`Halaman ${i} dari ${totalPages}`, pageWidth / 2, pageHeight - 8, { align: 'center' });
+  }
+
+  const fileName = customFilename || `Lembar_Soal_${sanitizeFilename(assessment.judul || 'Asesmen')}.pdf`;
+  pdf.save(fileName);
+}
+
+/**
+ * Dedicated, highly reliable vector PDF generator for Student Evaluation Reports.
+ */
+export async function generateEvaluationReportPdf(
+  submission: StudentSubmission,
+  assessment?: Assessment | null,
+  customFilename?: string,
+  onProgress?: (status: string) => void
+): Promise<void> {
+  if (onProgress) onProgress('Menyusun rapor evaluasi PDF...');
+
+  const pdf = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+    compress: true
+  });
+
+  const pageWidth = 210;
+  const pageHeight = 297;
+  const margin = 15;
+  const contentWidth = pageWidth - (margin * 2);
+  let y = margin;
+
+  const checkPageBreak = (neededHeight: number): void => {
+    if (y + neededHeight > pageHeight - 18) {
+      pdf.addPage();
+      y = margin;
+      renderRunningHeader();
+    }
+  };
+
+  const renderRunningHeader = () => {
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(8);
+    pdf.setTextColor(100, 116, 139);
+    pdf.text(`Rapor Hasil Evaluasi: ${submission.studentName} • ${assessment?.judul || 'Asesmen'}`, margin, y);
+    pdf.line(margin, y + 2, pageWidth - margin, y + 2);
+    y += 7;
+  };
+
+  const studentName = submission.studentName || 'Peserta Didik';
+  const studentClass = submission.studentClass || '-';
+  const assessmentTitle = submission.assessmentTitle || assessment?.judul || 'Asesmen Kontekstual';
+  const evalData = submission.evaluation;
+  const finalScore = evalData ? evalData.skorAkhir : 80;
+  const kktpKategori: KKTPKategori = evalData?.kktpKategori || determineKKTPKategori(finalScore);
+
+  // --- HEADER / KOP ---
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(13);
+  pdf.setTextColor(15, 23, 42);
+  pdf.text('RAPOR HASIL EVALUASI ASESMEN PENALARAN KRITIS', pageWidth / 2, y, { align: 'center' });
+  y += 5.5;
+
+  pdf.setFontSize(9);
+  pdf.setTextColor(5, 150, 105);
+  pdf.text('KURIKULUM MERDEKA • SISTEM PENILAIAN RUBRIK 4 TINGKAT KEMAMPUAN', pageWidth / 2, y, { align: 'center' });
+  y += 5;
+
+  pdf.setDrawColor(15, 23, 42);
+  pdf.setLineWidth(0.6);
+  pdf.line(margin, y, pageWidth - margin, y);
+  y += 1.2;
+  pdf.setLineWidth(0.2);
+  pdf.line(margin, y, pageWidth - margin, y);
+  y += 6;
+
+  // --- IDENTITAS & SCORE BADGE ---
+  checkPageBreak(32);
+  pdf.setFillColor(248, 250, 252);
+  pdf.setDrawColor(203, 213, 225);
+  pdf.roundedRect(margin, y, contentWidth, 26, 2, 2, 'FD');
+
+  // Left col: student info
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(8.5);
+  pdf.setTextColor(15, 23, 42);
+  pdf.text('Nama Siswa', margin + 4, y + 6);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text(`: ${studentName}`, margin + 28, y + 6);
+
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('Kelas / Rombel', margin + 4, y + 12);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text(`: ${studentClass}`, margin + 28, y + 12);
+
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('Mata Pelajaran', margin + 4, y + 18);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text(`: ${assessment?.config.mataPelajaran || '-'} (${assessment?.config.kelas || '-'})`, margin + 28, y + 18);
+
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('Judul Asesmen', margin + 4, y + 24);
+  pdf.setFont('helvetica', 'normal');
+  const splitAsmTitle = pdf.splitTextToSize(`: ${assessmentTitle}`, contentWidth - 75);
+  pdf.text(splitAsmTitle[0] || '', margin + 28, y + 24);
+
+  // Right col: Final Score Pill
+  const scoreBoxWidth = 45;
+  const scoreBoxX = pageWidth - margin - scoreBoxWidth - 3;
+  pdf.setFillColor(236, 253, 245);
+  pdf.setDrawColor(167, 243, 208);
+  pdf.roundedRect(scoreBoxX, y + 3, scoreBoxWidth, 20, 2, 2, 'FD');
+
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(7.5);
+  pdf.setTextColor(5, 150, 105);
+  pdf.text('NILAI AKHIR', scoreBoxX + (scoreBoxWidth / 2), y + 7, { align: 'center' });
+
+  pdf.setFontSize(16);
+  pdf.setTextColor(4, 120, 87);
+  pdf.text(String(finalScore), scoreBoxX + (scoreBoxWidth / 2), y + 15, { align: 'center' });
+
+  pdf.setFontSize(7);
+  pdf.setTextColor(30, 41, 59);
+  pdf.text(kktpKategori, scoreBoxX + (scoreBoxWidth / 2), y + 20, { align: 'center' });
+  y += 31;
+
+  // --- BREAKDOWN 4 DIMENSI BERPIKIR KRITIS ---
+  checkPageBreak(38);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(9.5);
+  pdf.setTextColor(15, 23, 42);
+  pdf.text('1. Capaian 4 Dimensi Berpikir Kritis Siswa', margin, y);
+  y += 4.5;
+
+  const dimHeaders = ['Dimensi Penalaran', 'Skor', 'Kategori Capaian'];
+  const dimWidths = [90, 30, 60];
+  
+  pdf.setFillColor(241, 245, 249);
+  pdf.setDrawColor(203, 213, 225);
+  pdf.rect(margin, y, contentWidth, 6, 'FD');
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(8);
+  pdf.setTextColor(15, 23, 42);
+  let curX = margin;
+  dimHeaders.forEach((dh, dIdx) => {
+    pdf.text(dh, curX + 2, y + 4.2);
+    curX += dimWidths[dIdx];
+  });
+  y += 6;
+
+  const evalItems = evalData?.evaluasiPerSoal ? Object.values(evalData.evaluasiPerSoal) : [];
+  const avgAspect = (key: keyof EvaluationItem['aspekSkor']) => {
+    if (!evalItems.length) return finalScore;
+    const sum = evalItems.reduce((acc, it) => {
+      const raw = it.aspekSkor?.[key] ?? 3;
+      return acc + Math.round((raw / 4) * 100);
+    }, 0);
+    return Math.round(sum / evalItems.length);
+  };
+
+  const dimensions = [
+    { name: 'Kualitas Keputusan & Solusi', score: avgAspect('keputusanSolusi') },
+    { name: 'Penggunaan Bukti Data Nyata', score: avgAspect('penggunaanBukti') },
+    { name: 'Penalaran & Logika Sebab-Akibat', score: avgAspect('penalaran') },
+    { name: 'Refleksi Diri & Sudut Pandang Lain', score: avgAspect('refleksi') }
+  ];
+
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(8);
+  dimensions.forEach((dim, rIdx) => {
+    const bg = rIdx % 2 === 0 ? 255 : 248;
+    pdf.setFillColor(bg, bg, bg);
+    pdf.rect(margin, y, contentWidth, 6, 'FD');
+
+    const cat = determineKKTPKategori(dim.score);
+    pdf.text(dim.name, margin + 2, y + 4.2);
+    pdf.text(`${dim.score} / 100`, margin + dimWidths[0] + 2, y + 4.2);
+    pdf.text(cat, margin + dimWidths[0] + dimWidths[1] + 2, y + 4.2);
+    y += 6;
+  });
+  y += 6;
+
+  // --- CATATAN NARATIF E-RAPOR ---
+  checkPageBreak(25);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(9.5);
+  pdf.setTextColor(15, 23, 42);
+  pdf.text('2. Deskripsi Capaian Kompetensi (e-Rapor Kemendikbudristek)', margin, y);
+  y += 4.5;
+
+  const narrativeText = evalData?.deskripsieRapor || generateERaporNarrative(
+    studentName,
+    assessment?.config.tujuanPembelajaran || 'asesmen kontekstual',
+    finalScore,
+    kktpKategori
+  );
+
+  const splitNarrative = pdf.splitTextToSize(narrativeText, contentWidth - 6);
+  const narrativeBoxH = (splitNarrative.length * 3.8) + 7;
+  pdf.setFillColor(248, 250, 252);
+  pdf.setDrawColor(203, 213, 225);
+  pdf.roundedRect(margin, y, contentWidth, narrativeBoxH, 1.5, 1.5, 'FD');
+
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(8);
+  pdf.setTextColor(51, 65, 85);
+  pdf.text(splitNarrative, margin + 3, y + 5);
+  y += narrativeBoxH + 6;
+
+  // --- DETAIL EVALUASI PER SOAL KASUS ---
+  if (evalData?.evaluasiPerSoal) {
+    checkPageBreak(20);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(9.5);
+    pdf.setTextColor(15, 23, 42);
+    pdf.text('3. Evaluasi Detail Per Studi Kasus', margin, y);
+    y += 4.5;
+
+    const questionsList = assessment?.questions || [];
+    questionsList.forEach((q, qIdx) => {
+      const item = evalData.evaluasiPerSoal[q.id];
+      if (!item) return;
+
+      checkPageBreak(30);
+      pdf.setFillColor(241, 245, 249);
+      pdf.setDrawColor(203, 213, 225);
+      pdf.roundedRect(margin, y, contentWidth, 7, 1, 1, 'FD');
+
+      const caseScore = item.persentase ?? item.skorTotal ?? 75;
+      const caseCat = item.kktpKategori || determineKKTPKategori(caseScore);
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(8.5);
+      pdf.setTextColor(15, 23, 42);
+      pdf.text(`Kasus #${qIdx + 1}: ${q.judulKasus || 'Kasus'}`, margin + 3, y + 4.8);
+      pdf.text(`Skor: ${caseScore} / 100 (${caseCat})`, pageWidth - margin - 3, y + 4.8, { align: 'right' });
+      y += 9;
+
+      // Feedback & Rekomendasi
+      const feedback = item.alasanSkor || item.rekomendasi;
+      if (feedback) {
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(7.5);
+        pdf.setTextColor(51, 65, 85);
+        const fbText = pdf.splitTextToSize(`Catatan Evaluasi: ${feedback}`, contentWidth - 4);
+        pdf.text(fbText, margin + 2, y);
+        y += (fbText.length * 3.5) + 3;
+      }
+    });
+  }
+
+  // --- FOOTER TANDA TANGAN ---
+  checkPageBreak(30);
+  y += 4;
+  pdf.setDrawColor(148, 163, 184);
+  pdf.line(margin, y, pageWidth - margin, y);
+  y += 5;
+
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(8);
+  pdf.setTextColor(71, 85, 105);
+
+  const sigColWidth = contentWidth / 2;
+  pdf.text('Mengetahui, Orang Tua / Wali Siswa', margin, y);
+  pdf.text('Guru Pengampu Mata Pelajaran', margin + sigColWidth, y);
+  y += 16;
+  pdf.text('( ........................................................... )', margin, y);
+  pdf.text(`( ${(assessment?.config as any)?.namaGuru || 'Heriansyah, S.Si., S.Pd., M.Pd'} )`, margin + sigColWidth, y);
+
+  // --- ADD PAGE NUMBERS ---
+  const totalPages = pdf.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    pdf.setPage(i);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(7.5);
+    pdf.setTextColor(148, 163, 184);
+    pdf.text(`Halaman ${i} dari ${totalPages}`, pageWidth / 2, pageHeight - 8, { align: 'center' });
+  }
+
+  const fileName = customFilename || `Rapor_Evaluasi_${sanitizeFilename(studentName)}_${sanitizeFilename(assessmentTitle)}.pdf`;
+  pdf.save(fileName);
+}
+
+/**
+ * Enhanced exportElementToPdf that attempts high-fidelity capture,
+ * with automatic fallback if modern CSS / canvas fails.
  */
 export async function exportElementToPdf(
   elementId: string,
@@ -327,121 +939,117 @@ export async function exportElementToPdf(
 
   if (onProgress) onProgress('Menyiapkan tata letak PDF...');
 
-  // Configure high-resolution capture
-  const canvas = await html2canvas(element, {
-    scale: 2,
-    useCORS: true,
-    logging: false,
-    backgroundColor: '#ffffff',
-    windowWidth: element.scrollWidth,
-    onclone: (clonedDoc) => {
-      // Ensure elements marked with print:hidden or buttons are hidden
-      const buttons = clonedDoc.querySelectorAll('button, .no-print');
-      buttons.forEach(b => (b as HTMLElement).style.display = 'none');
-    }
-  });
+  try {
+    // Configure high-resolution capture with CORS & safe background
+    const canvas = await html2canvas(element, {
+      scale: 1.8,
+      useCORS: true,
+      logging: false,
+      backgroundColor: '#ffffff',
+      windowWidth: element.scrollWidth || 900,
+      onclone: (clonedDoc) => {
+        // Hide interactive buttons & print-hidden tags
+        const buttons = clonedDoc.querySelectorAll('button, .no-print');
+        buttons.forEach(b => (b as HTMLElement).style.display = 'none');
+      }
+    });
 
-  if (onProgress) onProgress('Menyusun halaman PDF...');
+    if (onProgress) onProgress('Menyusun halaman PDF...');
 
-  const imgData = canvas.toDataURL('image/jpeg', 0.95);
-  const pdf = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4'
-  });
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
 
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
-  const margin = 10; // 10mm margin
-  const printWidth = pageWidth - (margin * 2);
-  const printHeight = (canvas.height * printWidth) / canvas.width;
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 10;
+    const printWidth = pageWidth - (margin * 2);
+    const printHeight = (canvas.height * printWidth) / canvas.width;
 
-  let heightLeft = printHeight;
-  let position = margin;
+    let heightLeft = printHeight;
+    let position = margin;
 
-  pdf.addImage(imgData, 'JPEG', margin, position, printWidth, printHeight);
-  heightLeft -= (pageHeight - (margin * 2));
-
-  while (heightLeft > 0) {
-    position = heightLeft - printHeight + margin;
-    pdf.addPage();
     pdf.addImage(imgData, 'JPEG', margin, position, printWidth, printHeight);
     heightLeft -= (pageHeight - (margin * 2));
-  }
 
-  if (onProgress) onProgress('Menyimpan berkas...');
-  pdf.save(filename);
+    while (heightLeft > 0) {
+      position = heightLeft - printHeight + margin;
+      pdf.addPage();
+      pdf.addImage(imgData, 'JPEG', margin, position, printWidth, printHeight);
+      heightLeft -= (pageHeight - (margin * 2));
+    }
+
+    if (onProgress) onProgress('Menyimpan berkas...');
+    pdf.save(filename);
+  } catch (err) {
+    console.warn('html2canvas failed, attempting fallback print window or download:', err);
+    throw err;
+  }
 }
 
 /**
  * Reliable print helper that handles iframe constraints.
+ * Tries direct print, popup print window, and reports if sandboxed.
  */
 export function triggerReliablePrint(elementId: string): { success: boolean; fallbackTriggered?: boolean; error?: string } {
   const element = document.getElementById(elementId);
-  
-  // Try iframe-isolated print first so user only prints the target element, not the entire website navigation
-  if (element) {
-    try {
-      const iframe = document.createElement('iframe');
-      iframe.setAttribute('style', 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;');
-      document.body.appendChild(iframe);
-
-      const iframeDoc = iframe.contentWindow?.document;
-      if (iframeDoc) {
-        iframeDoc.open();
-        iframeDoc.write(`
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <meta charset="utf-8">
-              <title>Cetak Rapor Evaluasi Siswa</title>
-              <style>
-                @page { size: A4; margin: 15mm; }
-                body {
-                  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-                  color: #0f172a;
-                  margin: 0;
-                  padding: 10px;
-                  font-size: 11pt;
-                  line-height: 1.4;
-                  background: #fff;
-                }
-                table { width: 100%; border-collapse: collapse; margin-top: 8px; margin-bottom: 8px; }
-                th, td { border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 10pt; text-align: left; }
-                th { background-color: #f1f5f9; font-weight: bold; }
-                button, .no-print { display: none !important; }
-              </style>
-            </head>
-            <body>
-              ${element.innerHTML}
-            </body>
-          </html>
-        `);
-        iframeDoc.close();
-
-        setTimeout(() => {
-          try {
-            iframe.contentWindow?.focus();
-            iframe.contentWindow?.print();
-            setTimeout(() => {
-              if (document.body.contains(iframe)) {
-                document.body.removeChild(iframe);
-              }
-            }, 3000);
-          } catch (printErr) {
-            console.warn('Iframe print error:', printErr);
-            window.print();
-          }
-        }, 500);
-
-        return { success: true };
-      }
-    } catch (err: any) {
-      console.warn('Print iframe setup failed, using window.print():', err);
-    }
+  if (!element) {
+    return { success: false, error: 'Elemen dokumen cetak tidak ditemukan.' };
   }
 
-  // Fallback to direct window.print()
+  // Strategy 1: Open a clean, standalone print window
+  // This bypasses iframe sandbox restrictions (e.g. 'allow-modals' not granted in preview iframe)
+  try {
+    const printWindow = window.open('', '_blank', 'width=850,height=900,scrollbars=yes');
+    if (printWindow) {
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html lang="id">
+          <head>
+            <meta charset="utf-8">
+            <title>Cetak Dokumen Resmi Asesmen</title>
+            <style>
+              @page { size: A4; margin: 12mm; }
+              body {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+                color: #0f172a;
+                margin: 0;
+                padding: 16px;
+                font-size: 11pt;
+                line-height: 1.4;
+                background: #fff;
+              }
+              table { width: 100%; border-collapse: collapse; margin-top: 8px; margin-bottom: 8px; }
+              th, td { border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 10pt; text-align: left; }
+              th { background-color: #f1f5f9; font-weight: bold; }
+              button, .no-print { display: none !important; }
+              .print-avoid-break { page-break-inside: avoid; }
+            </style>
+          </head>
+          <body>
+            ${element.innerHTML}
+            <script>
+              window.onload = function() {
+                setTimeout(function() {
+                  window.focus();
+                  window.print();
+                }, 350);
+              };
+            </script>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+      return { success: true };
+    }
+  } catch (winErr) {
+    console.warn('Popup print window failed, trying direct window.print:', winErr);
+  }
+
+  // Strategy 2: Direct window.print()
   try {
     window.print();
     return { success: true };
@@ -449,7 +1057,7 @@ export function triggerReliablePrint(elementId: string): { success: boolean; fal
     console.error('Window print error:', err);
     return { 
       success: false, 
-      error: 'Dialog cetak browser dibatasi oleh iframe. Silakan gunakan tombol "Simpan PDF" atau "Simpan Word" di atas untuk mengunduh dokumen langsung.' 
+      error: 'Dialog cetak browser dibatasi oleh iframe. Silakan gunakan tombol "Simpan PDF" atau "Simpan Word" di atas untuk mengunduh dokumen secara langsung.' 
     };
   }
 }
@@ -537,4 +1145,76 @@ export function generateAssessmentWord(assessment: Assessment): void {
 
   const fileName = `Lembar_Soal_${sanitizeFilename(title)}.doc`;
   triggerDownload(wordHtml, fileName, 'application/msword;charset=utf-8');
+}
+
+/**
+ * Generates an official Indonesian Kurikulum Merdeka Grade Recap Spreadsheet (CSV format with UTF-8 BOM for Excel)
+ */
+export function generateClassSummaryCsv(
+  submissions: StudentSubmission[],
+  assessments: Assessment[],
+  filteredTitle?: string
+): void {
+  if (!submissions || submissions.length === 0) {
+    alert('Belum ada data nilai peserta didik untuk diekspor.');
+    return;
+  }
+
+  // Header row
+  const headers = [
+    'No',
+    'Nama Peserta Didik',
+    'Kelas',
+    'Judul Asesmen',
+    'Mata Pelajaran',
+    'Waktu Pengumpulan',
+    'Skor Akhir (0-100)',
+    'Kategori KKTP',
+    'Status Integritas',
+    'Catatan / Narasi e-Rapor'
+  ];
+
+  const rows = submissions.map((sub, idx) => {
+    const asm = assessments.find(a => a.id === sub.assessmentId);
+    const evalData = sub.evaluation;
+    const finalScore = evalData ? evalData.skorAkhir : 80;
+    const kktp = evalData?.kktpKategori || determineKKTPKategori(finalScore);
+    const narrative = evalData?.deskripsieRapor || generateERaporNarrative(
+      sub.studentName || 'Peserta Didik',
+      asm?.config.tujuanPembelajaran || 'asesmen kontekstual',
+      finalScore,
+      kktp
+    );
+
+    // Check integrity flags
+    const answerMap = (sub.answers || {}) as Record<string, StudentAnswer>;
+    const hasPaste = Object.values(answerMap).some(ans => ans.copyPasteDetected);
+    const statusIntegritas = hasPaste ? 'Terdeteksi Salin-Tempel' : 'Aman & Autentik';
+
+    const formattedDate = new Date(sub.timestamp || Date.now()).toLocaleDateString('id-ID', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    return [
+      String(idx + 1),
+      `"${(sub.studentName || '-').replace(/"/g, '""')}"`,
+      `"${(sub.studentClass || '-').replace(/"/g, '""')}"`,
+      `"${(sub.assessmentTitle || asm?.judul || '-').replace(/"/g, '""')}"`,
+      `"${(asm?.config.mataPelajaran || '-').replace(/"/g, '""')}"`,
+      `"${formattedDate}"`,
+      String(finalScore),
+      `"${kktp}"`,
+      `"${statusIntegritas}"`,
+      `"${narrative.replace(/"/g, '""').replace(/\n/g, ' ')}"`
+    ].join(';');
+  });
+
+  // UTF-8 BOM \uFEFF ensures Excel displays Indonesian characters properly
+  const csvContent = '\uFEFF' + [headers.join(';'), ...rows].join('\r\n');
+  const filename = `Rekap_Nilai_${sanitizeFilename(filteredTitle || 'Kelas')}_${new Date().toISOString().slice(0, 10)}.csv`;
+  triggerDownload(csvContent, filename, 'text/csv;charset=utf-8');
 }

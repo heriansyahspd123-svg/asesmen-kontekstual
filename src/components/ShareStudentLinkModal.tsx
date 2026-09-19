@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { Assessment } from '../types';
 import { buildStudentShareUrl, buildWhatsAppShareText, getPublicShareOrigin } from '../utils/storage';
+import { generateInteractiveHtmlAssessment } from '../utils/exportInteractiveHtml';
 
 interface ShareStudentLinkModalProps {
   assessment: Assessment | null;
@@ -47,6 +48,13 @@ export const ShareStudentLinkModal: React.FC<ShareStudentLinkModalProps> = ({
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [isQrFullscreen, setIsQrFullscreen] = useState<boolean>(false);
   const [linkMode, setLinkMode] = useState<'public' | 'current' | 'custom'>('public');
+  const [teacherPhone, setTeacherPhone] = useState<string>(() => {
+    try {
+      return localStorage.getItem('teacher_phone_wa') || '';
+    } catch {
+      return '';
+    }
+  });
   const [customOrigin, setCustomOrigin] = useState<string>(() => {
     try {
       return localStorage.getItem('custom_share_origin') || '';
@@ -125,6 +133,14 @@ export const ShareStudentLinkModal: React.FC<ShareStudentLinkModalProps> = ({
     } else {
       window.location.href = `/?view=student&code=${encodeURIComponent(assessment.kodeAkses)}`;
     }
+  };
+
+  const handleDownloadInteractiveHtml = () => {
+    if (!assessment) return;
+    try {
+      localStorage.setItem('teacher_phone_wa', teacherPhone);
+    } catch {}
+    generateInteractiveHtmlAssessment(assessment, teacherPhone);
   };
 
   const handleSaveCustomOrigin = (val: string) => {
@@ -290,12 +306,60 @@ export const ShareStudentLinkModal: React.FC<ShareStudentLinkModalProps> = ({
             </button>
           </div>
 
+          {/* Solusi 100% Bebas 403: Unduh Lembar Soal Mandiri (.html) */}
+          <div className="p-4 rounded-2xl bg-slate-900 text-white shadow-md border border-slate-700/80 space-y-3">
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 shrink-0 mt-0.5">
+                <Download className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="text-xs font-bold text-white">
+                    Solusi 100% Bebas 403: File Soal Interaktif Mandiri (.html)
+                  </h4>
+                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-semibold border border-emerald-500/30">
+                    Bebas Login & Bebas Server
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  Kirimkan file ini ke grup WhatsApp siswa. Siswa cukup klik/buka file tersebut di HP Android atau Laptop (buka dengan Chrome). Soal langsung tampil lengkap dan interaktif tanpa butuh login Google, tanpa server, dan bisa langsung mengirim jawaban kembali ke WhatsApp Guru!
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2 pt-1 border-t border-slate-800">
+              <div className="flex-1">
+                <label className="text-[10px] text-slate-400 block mb-1 font-medium">
+                  Nomor WhatsApp Guru untuk menerima jawaban siswa (opsional):
+                </label>
+                <input
+                  type="tel"
+                  value={teacherPhone}
+                  onChange={(e) => {
+                    setTeacherPhone(e.target.value);
+                    try { localStorage.setItem('teacher_phone_wa', e.target.value); } catch {}
+                  }}
+                  placeholder="Contoh: 08123456789"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs text-white placeholder-slate-500 font-mono focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleDownloadInteractiveHtml}
+                className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer shrink-0"
+              >
+                <Download className="w-4 h-4" />
+                <span>Unduh File .html Siswa</span>
+              </button>
+            </div>
+          </div>
+
           {/* Link Type Selector & Status */}
           <div className="space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                 <Globe className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                <span>Pilih Jenis Tautan Pengerjaan:</span>
+                <span>Atau Bagikan Lewat Tautan Web:</span>
               </label>
               <button
                 type="button"
@@ -303,7 +367,7 @@ export const ShareStudentLinkModal: React.FC<ShareStudentLinkModalProps> = ({
                 className="text-[11px] text-amber-700 dark:text-amber-400 font-semibold hover:underline flex items-center gap-1 cursor-pointer"
               >
                 <HelpCircle className="w-3.5 h-3.5" />
-                <span>{showTroubleshoot ? 'Tutup Panduan Error' : 'Panduan Error 403 / 404'}</span>
+                <span>{showTroubleshoot ? 'Tutup Penjelasan 403' : 'Mengapa Muncul Pesan 403?'}</span>
               </button>
             </div>
 
@@ -327,7 +391,7 @@ export const ShareStudentLinkModal: React.FC<ShareStudentLinkModalProps> = ({
                   </span>
                 </div>
                 <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400 pl-3.5">
-                  Bebas login akun Google (Aktif via tombol Share di kanan atas AI Studio)
+                  Bebas login akun Google (Aktif setelah klik Share di kanan atas AI Studio)
                 </span>
               </button>
 
@@ -343,34 +407,34 @@ export const ShareStudentLinkModal: React.FC<ShareStudentLinkModalProps> = ({
                 <div className="flex items-center justify-between">
                   <span className="flex items-center gap-1.5">
                     <span className={`w-2 h-2 rounded-full ${linkMode === 'current' ? 'bg-amber-500' : 'bg-slate-400'}`} />
-                    Tautan Preview Sesi Ini (ais-dev)
+                    Tautan Sesi Pengembang (ais-dev)
                   </span>
                   <span className="text-[10px] bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded font-semibold">
-                    Uji Coba Guru
+                    Khusus Guru
                   </span>
                 </div>
                 <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400 pl-3.5">
-                  Langsung dapat dibuka di tab baru laptop Anda saat ini
+                  Khusus tab laptop guru (akan 403 jika dibuka di HP siswa)
                 </span>
               </button>
             </div>
 
             {/* Troubleshooting info banner */}
             {(showTroubleshoot || linkMode === 'public') && (
-              <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-xs space-y-2">
+              <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-xs space-y-2.5">
                 <div className="flex items-center gap-2 font-bold text-amber-900 dark:text-amber-300">
                   <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span>Petunjuk Penting Google AI Studio:</span>
+                  <span>Penjelasan Lengkap Galat: <em>"403 Itu adalah kesalahan / Anda tidak memiliki akses"</em></span>
                 </div>
-                <div className="space-y-1.5 text-[11px] text-amber-900/90 dark:text-amber-300/90 leading-relaxed">
+                <div className="space-y-2 text-[11px] text-amber-900/90 dark:text-amber-300/90 leading-relaxed">
                   <p>
-                    • <strong>Jika muncul <em>"Error: Page not found"</em>:</strong> Tautan publik (<code className="font-mono bg-amber-100 dark:bg-amber-900/60 px-1 rounded">ais-pre</code>) baru dibuat oleh Google Cloud setelah Anda mengklik tombol <strong>"Share" (Bagikan)</strong> di bilah pojok kanan atas Google AI Studio. Cukup klik tombol <strong>Share</strong> satu kali.
+                    1. <strong>Mengapa Muncul Pesan 403?</strong> Tautan pengembang (<code className="font-mono bg-amber-100 dark:bg-amber-900/60 px-1 rounded">ais-dev</code>) diproteksi langsung oleh Google Cloud IAM agar hanya dapat dibuka oleh akun Google developer Anda (<code className="font-mono bg-amber-100 dark:bg-amber-900/60 px-1 rounded">heriansyah.spd123@gmail.com</code>). Saat tautan tersebut dibuka di HP Android siswa, akun lain, atau peramban privat, Google Cloud otomatis menampilkan pesan: <em>"403 Itu adalah kesalahan. Kami mohon maaf, tetapi Anda tidak memiliki akses ke halaman ini."</em>
                   </p>
                   <p>
-                    • <strong>Jika muncul <em>"403 Itu adalah kesalahan"</em>:</strong> Terjadi karena tautan pengembang (<code className="font-mono bg-amber-100 dark:bg-amber-900/60 px-1 rounded">ais-dev</code>) dibuka di HP siswa yang tidak login ke akun Google developer Anda. Pastikan membagikan Tautan Publik setelah Share aktif.
+                    2. <strong>Cara Praktis Membuka Akses Web Publik:</strong> Di sudut kanan atas layar Google AI Studio Anda, klik tombol <strong>"Share" (Bagikan)</strong>. Setelah tombol Share diklik, Google Cloud akan mengaktifkan domain publik (<code className="font-mono bg-amber-100 dark:bg-amber-900/60 px-1 rounded">ais-pre</code>) yang bisa dibuka siswa tanpa login.
                   </p>
                   <p>
-                    • <strong>Alternatif Tercepat:</strong> Klik tombol hijau <strong>"Kerjakan Sekarang (Mode Siswa)"</strong> di atas, atau minta siswa membuka aplikasi dan memasukkan Kode Akses: <strong className="font-mono bg-amber-200/80 dark:bg-amber-900 px-1.5 py-0.5 rounded text-amber-950 dark:text-amber-200">{assessment.kodeAkses}</strong>.
+                    3. <strong>Solusi Paling Cepat Tanpa Bergantung Server Google:</strong> Cukup gunakan tombol <strong>"Unduh File .html Siswa"</strong> di kotak hitam di atas. File tersebut bisa langsung dibagikan lewat WA ke siswa dan 100% langsung bisa dibuka di peramban HP Android maupun Laptop tanpa error 403 sama sekali.
                   </p>
                 </div>
               </div>

@@ -461,7 +461,7 @@ export const StudentMode: React.FC<StudentModeProps> = ({
       detectedSource = 'Kunci Jawaban Guru';
       alertTitle = 'Peringatan Keras: Teks Mirip Kunci Jawaban Guru!';
       alertMsg = 'Teks yang kamu tempelkan memiliki kemiripan sangat tinggi dengan kunci jawaban guru. Ingat, sistem merekam riwayat salin-tempel ini dan guru dapat memeriksa orisinalitas penalaranmu.';
-    } else if (q.dataInformasi && typeof q.dataInformasi === 'string' && q.dataInformasi.toLowerCase().includes(lowerPasted.slice(0, 30))) {
+    } else if (q.dataInformasi?.konten && q.dataInformasi.konten.toLowerCase().includes(lowerPasted.slice(0, 30))) {
       detectedSource = 'Teks Soal Kasus';
       alertTitle = 'Perhatian: Mengutip Langsung Teks Kasus';
       alertMsg = 'Kamu menyalin potongan teks kasus. Pastikan kamu menjelaskan interpretasimu dan sertakan alasan logis, bukan sekadar memindahkan teks.';
@@ -914,7 +914,7 @@ export const StudentMode: React.FC<StudentModeProps> = ({
 
           <div className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 text-xs font-semibold">
             <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>Boleh: {selectedAssessment.config.sumberBoleh.join(', ')}</span>
+            <span>Boleh: {(Array.isArray(selectedAssessment.config?.sumberBoleh) ? selectedAssessment.config.sumberBoleh : ['Buku', 'Catatan', 'Internet', 'AI']).join(', ')}</span>
           </div>
 
           <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 border border-amber-200 dark:border-amber-800 text-xs font-mono font-bold">
@@ -1080,48 +1080,34 @@ export const StudentMode: React.FC<StudentModeProps> = ({
               {currentQ.dataInformasi.konten}
             </p>
 
-            {/* Visualisasi Grafik Nyata Siswa (Bar / Line / Pie / Area) */}
-            {currentQ.dataInformasi.visualisasiGrafik && (
+            {/* Visualisasi Grafik & Tabel Data Nyata Siswa (Bar / Line / Pie / Area & Tabel Interaktif) */}
+            {(currentQ.dataInformasi.visualisasiGrafik || currentQ.dataInformasi.tabelData) && (
               <DataChartViewer
+                grafikData={currentQ.dataInformasi.visualisasiGrafik}
                 grafik={currentQ.dataInformasi.visualisasiGrafik}
+                tabelData={currentQ.dataInformasi.tabelData}
+                judulKasus={currentQ.judulKasus}
                 onCiteData={handleCiteDataToEvidence}
+                defaultView={
+                  currentQ.dataInformasi.visualisasiGrafik && currentQ.dataInformasi.tabelData 
+                    ? 'split' 
+                    : currentQ.dataInformasi.visualisasiGrafik 
+                    ? 'chart' 
+                    : 'table'
+                }
               />
             )}
 
-            {/* Table Rendering (shown if no visualisasiGrafik or fallback) */}
-            {currentQ.dataInformasi.tabelData && !currentQ.dataInformasi.visualisasiGrafik && (
-              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
-                <table className="w-full text-xs text-left">
-                  <thead className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold border-b border-slate-200 dark:border-slate-700">
-                    <tr>
-                      {currentQ.dataInformasi.tabelData.headers.map((h, i) => (
-                        <th key={i} className="p-3">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {currentQ.dataInformasi.tabelData.baris.map((row, rIdx) => (
-                      <tr key={rIdx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                        {row.map((cell, cIdx) => (
-                          <td key={cIdx} className="p-3 font-medium text-slate-800 dark:text-slate-200">{cell}</td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
             {/* Multi-perspective Quotes */}
-            {currentQ.dataInformasi.kutipanPihak && currentQ.dataInformasi.kutipanPihak.length > 0 && (
+            {Array.isArray(currentQ.dataInformasi?.kutipanPihak) && currentQ.dataInformasi.kutipanPihak.length > 0 && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                 {currentQ.dataInformasi.kutipanPihak.map((pihak, pIdx) => (
                   <div key={pIdx} className="p-3.5 rounded-xl bg-white dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 space-y-1 shadow-2xs">
                     <div className="flex items-center justify-between font-bold text-xs text-slate-900 dark:text-white">
-                      <span>{pihak.nama}</span>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">{pihak.peran}</span>
+                      <span>{pihak?.nama || 'Narasumber'}</span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">{pihak?.peran || ''}</span>
                     </div>
-                    <p className="text-xs text-slate-600 dark:text-slate-300 italic">“{pihak.pernyataan}”</p>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 italic">“{pihak?.pernyataan || ''}”</p>
                   </div>
                 ))}
               </div>
@@ -1156,7 +1142,7 @@ export const StudentMode: React.FC<StudentModeProps> = ({
                   Pertanyaan Pemandu (Scaffolding):
                 </span>
                 <ul className="list-disc list-inside space-y-1 text-[11px] text-teal-900 dark:text-teal-300">
-                  {currentQ.petunjukPemandu.map((hint, idx) => (
+                  {(Array.isArray(currentQ.petunjukPemandu) ? currentQ.petunjukPemandu : [currentQ.petunjukPemandu || 'Perhatikan data kasus yang disajikan.']).map((hint, idx) => (
                     <li key={idx}>{hint}</li>
                   ))}
                 </ul>

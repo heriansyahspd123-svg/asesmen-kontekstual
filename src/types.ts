@@ -111,6 +111,7 @@ export interface Question {
   permintaanAlasan: string;
   refleksi: string;
   bentukSoal: string;
+  fokusPenalaran?: string[];
   pilihanJawaban?: PilihanJawaban[];
   kunciJawaban: string;
   petunjukPemandu: string[];

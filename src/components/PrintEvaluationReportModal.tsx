@@ -20,7 +20,7 @@ import { Assessment, StudentSubmission, KKTPKategori, EvaluationItem, StudentAns
 import { determineKKTPKategori, generateERaporNarrative } from '../data/kurikulumMerdekaData';
 import { 
   generateEvaluationReportWord, 
-  exportElementToPdf, 
+  generateEvaluationReportPdf, 
   triggerReliablePrint, 
   sanitizeFilename 
 } from '../utils/exportReport';
@@ -82,12 +82,12 @@ export const PrintEvaluationReportModal: React.FC<PrintEvaluationReportModalProp
   const handleSavePdf = async () => {
     try {
       setIsExportingPdf(true);
-      setPdfProgressText('Menyiapkan halaman PDF...');
+      setPdfProgressText('Menyusun PDF rapor...');
       const fileName = `Rapor_Evaluasi_${sanitizeFilename(submission.studentName)}_${sanitizeFilename(submission.assessmentTitle || 'Asesmen')}.pdf`;
-      await exportElementToPdf('evaluation-printable-report', fileName, (status) => {
+      await generateEvaluationReportPdf(submission, assessment, fileName, (status) => {
         setPdfProgressText(status);
       });
-      setPrintNotice('✓ Berkas PDF berhasil diunduh!');
+      setPrintNotice('✓ Berkas PDF rapor evaluasi berhasil diunduh!');
       setTimeout(() => setPrintNotice(null), 3500);
     } catch (err: any) {
       console.error('PDF export error:', err);

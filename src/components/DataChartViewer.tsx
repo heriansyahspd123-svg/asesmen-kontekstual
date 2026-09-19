@@ -22,6 +22,7 @@ import { useTheme } from '../context/ThemeContext';
 
 interface DataChartViewerProps {
   grafikData?: VisualisasiGrafik;
+  grafik?: VisualisasiGrafik;
   tabelData?: {
     headers: string[];
     baris: string[][];
@@ -62,7 +63,7 @@ export function autoExtractGrafikFromTable(
   tabelData: { headers: string[]; baris: string[][] },
   fallbackTitle?: string
 ): VisualisasiGrafik | null {
-  if (!tabelData || !tabelData.headers || tabelData.headers.length < 2 || !tabelData.baris || tabelData.baris.length === 0) {
+  if (!tabelData || !Array.isArray(tabelData.headers) || tabelData.headers.length < 2 || !Array.isArray(tabelData.baris) || tabelData.baris.length === 0) {
     return null;
   }
 
@@ -75,7 +76,7 @@ export function autoExtractGrafikFromTable(
   for (let c = 1; c < headers.length; c++) {
     let numericCount = 0;
     for (let r = 0; r < baris.length; r++) {
-      if (parseNumber(baris[r]?.[c]) !== null) {
+      if (Array.isArray(baris[r]) && parseNumber(baris[r]?.[c]) !== null) {
         numericCount++;
       }
     }
@@ -90,12 +91,12 @@ export function autoExtractGrafikFromTable(
   }
 
   for (let r = 0; r < baris.length; r++) {
-    labels.push(baris[r]?.[labelColIdx] || `Data ${r + 1}`);
+    labels.push((Array.isArray(baris[r]) ? baris[r]?.[labelColIdx] : null) || `Data ${r + 1}`);
   }
 
   const datasets = numericColIndices.map((colIdx, idx) => {
     const colHeader = headers[colIdx] || `Variabel ${idx + 1}`;
-    const values = baris.map(r => parseNumber(r?.[colIdx]) ?? 0);
+    const values = baris.map(r => (Array.isArray(r) ? parseNumber(r?.[colIdx]) : null) ?? 0);
     return {
       nama: colHeader,
       nilai: values,
@@ -124,6 +125,7 @@ export function autoExtractGrafikFromTable(
 
 export const DataChartViewer: React.FC<DataChartViewerProps> = ({
   grafikData: propGrafikData,
+  grafik,
   tabelData,
   judulKasus = 'Kasus Data Nyata',
   allowToggleView = true,
@@ -135,16 +137,18 @@ export const DataChartViewer: React.FC<DataChartViewerProps> = ({
 }) => {
   const { isDarkMode } = useTheme();
 
+  const effectiveGrafik = propGrafikData || grafik;
+
   // Resolved graphic data: either prop or extracted from table
   const resolvedGrafik = useMemo(() => {
-    if (propGrafikData && propGrafikData.datasets && propGrafikData.datasets.length > 0) {
-      return propGrafikData;
+    if (effectiveGrafik && Array.isArray(effectiveGrafik.datasets) && effectiveGrafik.datasets.length > 0 && Array.isArray(effectiveGrafik.labels) && effectiveGrafik.labels.length > 0) {
+      return effectiveGrafik;
     }
-    if (tabelData) {
+    if (tabelData && Array.isArray(tabelData.headers) && Array.isArray(tabelData.baris)) {
       return autoExtractGrafikFromTable(tabelData, `Visualisasi Data: ${judulKasus}`);
     }
     return null;
-  }, [propGrafikData, tabelData, judulKasus]);
+  }, [effectiveGrafik, tabelData, judulKasus]);
 
   const [activeChartType, setActiveChartType] = useState<ChartType>(() => {
     return resolvedGrafik?.tipeGrafik || 'bar';
@@ -157,15 +161,34 @@ export const DataChartViewer: React.FC<DataChartViewerProps> = ({
     return defaultView;
   });
 
+  // Synchronize active chart type and view mode when question or data changes
+  React.useEffect(() => {
+    if (resolvedGrafik?.tipeGrafik) {
+      setActiveChartType(resolvedGrafik.tipeGrafik);
+    }
+  }, [resolvedGrafik?.tipeGrafik]);
+
+  React.useEffect(() => {
+    if (isPrintMode) {
+      setViewMode('split');
+    } else if (!resolvedGrafik && tabelData) {
+      setViewMode('table');
+    } else if (resolvedGrafik && !tabelData) {
+      setViewMode('chart');
+    }
+  }, [resolvedGrafik, tabelData, isPrintMode]);
+
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
 
   // Transform to Recharts data array format
   const chartData = useMemo(() => {
-    if (!resolvedGrafik) return [];
+    if (!resolvedGrafik || !Array.isArray(resolvedGrafik.labels) || !Array.isArray(resolvedGrafik.datasets)) return [];
     return resolvedGrafik.labels.map((label, idx) => {
-      const item: any = { name: label };
+      const item: any = { name: label || `Data ${idx + 1}` };
       resolvedGrafik.datasets.forEach(ds => {
-        item[ds.nama] = ds.nilai[idx] ?? 0;
+        if (ds && ds.nama) {
+          item[ds.nama] = Array.isArray(ds.nilai) ? (ds.nilai[idx] ?? 0) : 0;
+        }
       });
       return item;
     });
@@ -173,19 +196,21 @@ export const DataChartViewer: React.FC<DataChartViewerProps> = ({
 
   // Transform for Pie chart (using first dataset)
   const pieData = useMemo(() => {
-    if (!resolvedGrafik || resolvedGrafik.datasets.length === 0) return [];
+    if (!resolvedGrafik || !Array.isArray(resolvedGrafik.labels) || !Array.isArray(resolvedGrafik.datasets) || resolvedGrafik.datasets.length === 0) return [];
     const ds = resolvedGrafik.datasets[0];
+    if (!ds || !Array.isArray(ds.nilai)) return [];
     return resolvedGrafik.labels.map((label, idx) => ({
-      name: label,
-      value: ds.nilai[idx] ?? 0
+      name: label || `Data ${idx + 1}`,
+      value: typeof ds.nilai[idx] === 'number' ? ds.nilai[idx] : 0
     }));
   }, [resolvedGrafik]);
 
   // Statistics calculation for quick insight
   const stats = useMemo(() => {
-    if (!resolvedGrafik || resolvedGrafik.datasets.length === 0) return null;
+    if (!resolvedGrafik || !Array.isArray(resolvedGrafik.datasets) || resolvedGrafik.datasets.length === 0) return null;
     const primary = resolvedGrafik.datasets[0];
-    const vals = primary.nilai.filter(v => typeof v === 'number');
+    if (!primary || !Array.isArray(primary.nilai)) return null;
+    const vals = primary.nilai.filter(v => typeof v === 'number' && !isNaN(v));
     if (vals.length === 0) return null;
 
     const maxVal = Math.max(...vals);
@@ -196,9 +221,9 @@ export const DataChartViewer: React.FC<DataChartViewerProps> = ({
     const avg = Math.round((sum / vals.length) * 10) / 10;
 
     return {
-      variableName: primary.nama,
-      max: { val: maxVal, label: resolvedGrafik.labels[maxIdx] },
-      min: { val: minVal, label: resolvedGrafik.labels[minIdx] },
+      variableName: primary.nama || 'Nilai',
+      max: { val: maxVal, label: resolvedGrafik.labels?.[maxIdx] || 'Tertinggi' },
+      min: { val: minVal, label: resolvedGrafik.labels?.[minIdx] || 'Terendah' },
       avg,
       sum
     };

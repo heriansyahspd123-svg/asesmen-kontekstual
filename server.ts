@@ -151,6 +151,20 @@ app.post('/api/submissions', (req, res) => {
   }
 });
 
+// DELETE SUBMISSION
+app.delete('/api/submissions/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    if (submissionsStore.has(id)) {
+      submissionsStore.delete(id);
+      return res.json({ success: true, message: 'Lembar jawaban berhasil dihapus dari server' });
+    }
+    res.json({ success: true, message: 'Lembar jawaban sudah tidak ada di server' });
+  } catch (e: any) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
 // GENERATE ASSESSMENT API
 app.post('/api/generate-assessment', async (req, res) => {
   try {
@@ -386,30 +400,142 @@ Hasilkan respon HANYA dalam format JSON valid sesuai skema yang diminta.`;
         const assessmentId = 'asm-' + Date.now();
         const accessCode = `${config.jenjang}-${config.kelas}-${Math.floor(100 + Math.random() * 900)}`;
 
-        const questionsWithChecks = (parsed.questions || []).map((q: any, idx: number) => ({
-          ...q,
-          id: `q-${Date.now()}-${idx + 1}`,
-          nomor: idx + 1,
-          bentukSoal: q.bentukSoal || config.bentukSoal || 'studi kasus',
-          tingkatKesulitan: q.tingkatKesulitan || config.tingkatKesulitan || 'menengah',
-          qualityCheck: {
-            passed: true,
-            checks: [
-              { label: 'Konteks autentik & dekat dengan siswa', ok: true },
-              { label: 'Tidak dapat dijawab murni hafalan/definisi', ok: true },
-              { label: 'Memerlukan analisis data kasus yang disajikan', ok: true },
-              { label: 'Menuntut klaim, bukti data, dan justifikasi', ok: true },
-              { label: 'Mendorong refleksi & evaluasi keterbatasan data', ok: true },
-              { label: 'Rubrik penilaian 1-4 per 5 aspek lengkap', ok: true }
-            ]
+        let rawQuestions: any[] = [];
+        if (Array.isArray(parsed)) {
+          rawQuestions = parsed;
+        } else if (Array.isArray(parsed.questions)) {
+          rawQuestions = parsed.questions;
+        } else if (Array.isArray(parsed.soal)) {
+          rawQuestions = parsed.soal;
+        } else if (Array.isArray(parsed.soalKasus)) {
+          rawQuestions = parsed.soalKasus;
+        } else if (Array.isArray(parsed.items)) {
+          rawQuestions = parsed.items;
+        } else if (Array.isArray(parsed.asesmen?.questions)) {
+          rawQuestions = parsed.asesmen.questions;
+        } else if (parsed && typeof parsed === 'object') {
+          const candidate = Object.values(parsed).find((v: any) => Array.isArray(v) && v.length > 0 && typeof v[0] === 'object');
+          if (candidate) rawQuestions = candidate as any[];
+        }
+
+        if (!rawQuestions || rawQuestions.length === 0) {
+          throw new Error('Gemini tidak mengembalikan butir soal yang valid');
+        }
+
+        const questionsWithChecks = rawQuestions.map((q: any, idx: number) => {
+          // Normalize petunjukPemandu
+          let petunjuk: string[] = [
+            'Perhatikan data dan fakta kunci yang disajikan dalam kasus.',
+            'Bandingkan bukti pendukung dan bukti yang bertentangan.',
+            'Tuliskan penalaran logis yang menghubungkan bukti dengan keputusanmu.'
+          ];
+          if (Array.isArray(q.petunjukPemandu) && q.petunjukPemandu.length > 0) {
+            petunjuk = q.petunjukPemandu.map((item: any) => String(item));
+          } else if (typeof q.petunjukPemandu === 'string' && q.petunjukPemandu.trim()) {
+            petunjuk = [q.petunjukPemandu.trim()];
           }
-        }));
+
+          // Normalize dataInformasi
+          let dataInfo = q.dataInformasi;
+          if (!dataInfo || typeof dataInfo !== 'object') {
+            dataInfo = {
+              tipe: 'teks',
+              konten: typeof dataInfo === 'string' ? dataInfo : 'Data dan informasi terkait kasus pengamatan.'
+            };
+          }
+          if (typeof dataInfo.konten !== 'string') {
+            dataInfo.konten = 'Data dan informasi terkait kasus pengamatan kontekstual.';
+          }
+
+          // Normalize tabelData if present
+          if (dataInfo.tabelData) {
+            if (!Array.isArray(dataInfo.tabelData.headers) || !Array.isArray(dataInfo.tabelData.baris)) {
+              delete dataInfo.tabelData;
+            }
+          }
+
+          // Normalize visualisasiGrafik if present
+          if (dataInfo.visualisasiGrafik) {
+            const vg = dataInfo.visualisasiGrafik;
+            if (!vg.tipeGrafik || !Array.isArray(vg.labels) || !Array.isArray(vg.datasets) || vg.labels.length === 0 || vg.datasets.length === 0) {
+              delete dataInfo.visualisasiGrafik;
+            }
+          }
+
+          // Normalize kutipanPihak if present
+          if (dataInfo.kutipanPihak && !Array.isArray(dataInfo.kutipanPihak)) {
+            delete dataInfo.kutipanPihak;
+          }
+
+          // Normalize rubrik
+          const defaultRubrikAspect = {
+            4: 'Sangat mendalam, akurat, dan berbasis bukti komprehensif.',
+            3: 'Memenuhi kriteria dengan baik dan logis.',
+            2: 'Hanya memenuhi sebagian kriteria dasar.',
+            1: 'Belum memenuhi kriteria yang diharapkan.'
+          };
+          const rubrik = {
+            pemahamanMasalah: { ...defaultRubrikAspect, ...(typeof q.rubrik?.pemahamanMasalah === 'object' ? q.rubrik.pemahamanMasalah : {}) },
+            penggunaanBukti: { ...defaultRubrikAspect, ...(typeof q.rubrik?.penggunaanBukti === 'object' ? q.rubrik.penggunaanBukti : {}) },
+            penalaran: { ...defaultRubrikAspect, ...(typeof q.rubrik?.penalaran === 'object' ? q.rubrik.penalaran : {}) },
+            keputusanSolusi: { ...defaultRubrikAspect, ...(typeof q.rubrik?.keputusanSolusi === 'object' ? q.rubrik.keputusanSolusi : {}) },
+            refleksi: { ...defaultRubrikAspect, ...(typeof q.rubrik?.refleksi === 'object' ? q.rubrik.refleksi : {}) }
+          };
+
+          return {
+            ...q,
+            id: `q-${Date.now()}-${idx + 1}`,
+            nomor: idx + 1,
+            judulKasus: q.judulKasus || `Kasus ${idx + 1}: Analisis ${config.materi || 'Kontekstual'}`,
+            konteks: q.konteks || `Kasus kontekstual pembelajaran ${config.mataPelajaran || ''} kelas ${config.kelas || ''}.`,
+            masalah: q.masalah || 'Analisis masalah berdasarkan informasi yang tersedia.',
+            pertanyaanUtama: q.pertanyaanUtama || 'Bagaimana pendapat dan solusimu terhadap permasalahan tersebut?',
+            permintaanBukti: q.permintaanBukti || 'Kutip data atau fakta konkret untuk mendukung klaimmu.',
+            permintaanAlasan: q.permintaanAlasan || 'Jelaskan alasan logis yang menghubungkan bukti dengan kesimpulanmu.',
+            refleksi: q.refleksi || 'Apa keterbatasan atau data tambahan yang perlu dicari untuk melengkapi analisis ini?',
+            kunciJawaban: q.kunciJawaban || 'Siswa menganalisis data, memberikan klaim terjustifikasi, dan mengevaluasi keterbatasan.',
+            dataInformasi: dataInfo,
+            petunjukPemandu: petunjuk,
+            rubrik,
+            bentukSoal: q.bentukSoal || config.bentukSoal || 'studi kasus',
+            tingkatKesulitan: q.tingkatKesulitan || config.tingkatKesulitan || 'menengah',
+            qualityCheck: {
+              passed: true,
+              checks: [
+                { label: 'Konteks autentik & dekat dengan siswa', ok: true },
+                { label: 'Tidak dapat dijawab murni hafalan/definisi', ok: true },
+                { label: 'Memerlukan analisis data kasus yang disajikan', ok: true },
+                { label: 'Menuntut klaim, bukti data, dan justifikasi', ok: true },
+                { label: 'Mendorong refleksi & evaluasi keterbatasan data', ok: true },
+                { label: 'Rubrik penilaian 1-4 per 5 aspek lengkap', ok: true }
+              ]
+            }
+          };
+        });
+
+        const normalizedConfig = {
+          ...config,
+          sumberBoleh: Array.isArray(config.sumberBoleh) && config.sumberBoleh.length > 0
+            ? config.sumberBoleh
+            : ['Buku', 'Catatan', 'Internet', 'Google', 'AI'],
+          fokusPenalaran: Array.isArray(config.fokusPenalaran) && config.fokusPenalaran.length > 0
+            ? config.fokusPenalaran
+            : ['Analisis Data & Bukti', 'Klaim & Justifikasi', 'Refleksi Kritis'],
+          waktuPengerjaan: Number(config.waktuPengerjaan) || 60,
+          bentukSoal: config.bentukSoal || 'studi kasus',
+          jenjang: config.jenjang || 'SD',
+          kelas: config.kelas || 'V',
+          fase: config.fase || (config.jenjang === 'SD' ? 'Fase C' : 'Fase D'),
+          mataPelajaran: config.mataPelajaran || 'IPAS',
+          materi: config.materi || 'Konteks Masalah Nyata',
+          tujuanPembelajaran: config.tujuanPembelajaran || 'Peserta didik menganalisis data kontekstual dan menarik kesimpulan berbasis bukti.'
+        };
 
         const generatedAssessment = {
           id: assessmentId,
           kodeAkses: accessCode,
           judul: parsed.judul || `Asesmen Kontekstual ${config.mataPelajaran} - Kelas ${config.kelas}`,
-          config,
+          config: normalizedConfig,
           questions: questionsWithChecks,
           dibuatTanggal: new Date().toISOString().split('T')[0]
         };
@@ -1008,11 +1134,29 @@ function generateAlgorithmicAssessment(config: any) {
     }
   }
 
+  const normalizedConfig = {
+    ...config,
+    sumberBoleh: Array.isArray(config.sumberBoleh) && config.sumberBoleh.length > 0
+      ? config.sumberBoleh
+      : ['Buku', 'Catatan', 'Internet', 'Google', 'AI'],
+    fokusPenalaran: Array.isArray(config.fokusPenalaran) && config.fokusPenalaran.length > 0
+      ? config.fokusPenalaran
+      : ['Analisis Data & Bukti', 'Klaim & Justifikasi', 'Refleksi Kritis'],
+    waktuPengerjaan: Number(config.waktuPengerjaan) || 60,
+    bentukSoal: config.bentukSoal || 'studi kasus',
+    jenjang: config.jenjang || 'SD',
+    kelas: config.kelas || 'V',
+    fase: config.fase || (config.jenjang === 'SD' ? 'Fase C' : 'Fase D'),
+    mataPelajaran: config.mataPelajaran || 'IPAS',
+    materi: config.materi || 'Konteks Masalah Nyata',
+    tujuanPembelajaran: config.tujuanPembelajaran || 'Peserta didik menganalisis data kontekstual dan menarik kesimpulan berbasis bukti.'
+  };
+
   return {
     id: 'asm-' + Date.now(),
     kodeAkses: `${config.jenjang}-${config.kelas}-${Math.floor(100 + Math.random() * 900)}`,
     judul: `Asesmen Kontekstual ${config.mataPelajaran}: ${config.materi || 'Pemecahan Masalah Autentik'}`,
-    config,
+    config: normalizedConfig,
     questions: qList,
     dibuatTanggal: new Date().toISOString().split('T')[0]
   };

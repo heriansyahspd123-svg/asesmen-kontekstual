@@ -17,7 +17,11 @@ import {
   Printer,
   Copy,
   Check,
-  ShieldAlert
+  ShieldAlert,
+  Search,
+  Filter,
+  Trash2,
+  FileSpreadsheet
 } from 'lucide-react';
 import { StudentSubmission, Assessment, KKTPKategori, EvaluationItem, StudentAnswer } from '../types';
 import { determineKKTPKategori, generateERaporNarrative } from '../data/kurikulumMerdekaData';
@@ -25,7 +29,8 @@ import { TeacherIntegrityAuditModal } from './TeacherIntegrityModal';
 import { PrintEvaluationReportModal } from './PrintEvaluationReportModal';
 import { 
   generateEvaluationReportWord, 
-  exportElementToPdf, 
+  generateEvaluationReportPdf, 
+  generateClassSummaryCsv,
   sanitizeFilename 
 } from '../utils/exportReport';
 
@@ -34,26 +39,79 @@ interface ResultsViewProps {
   assessments: Assessment[];
   onBack: () => void;
   onSelectSubmission?: (sub: StudentSubmission) => void;
+  initialSubmissionId?: string;
+  onDeleteSubmission?: (submissionId: string) => void;
 }
 
 export const ResultsView: React.FC<ResultsViewProps> = ({
   submissions,
   assessments,
-  onBack
+  onBack,
+  initialSubmissionId,
+  onDeleteSubmission
 }) => {
   const [selectedSubId, setSelectedSubId] = useState<string>(
-    submissions.length > 0 ? submissions[0].id : ''
+    initialSubmissionId || (submissions.length > 0 ? submissions[0].id : '')
   );
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedAssessmentId, setSelectedAssessmentId] = useState<string>('all');
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null);
   const [copiedRapor, setCopiedRapor] = useState<boolean>(false);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState<boolean>(false);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
   const [quickNotice, setQuickNotice] = useState<string | null>(null);
 
-  const activeSubmission = submissions.find(s => s.id === selectedSubId) || (submissions[0] || null);
+  React.useEffect(() => {
+    if (initialSubmissionId && submissions.some(s => s.id === initialSubmissionId)) {
+      setSelectedSubId(initialSubmissionId);
+    }
+  }, [initialSubmissionId, submissions]);
+
+  // Filter submissions by search and assessment
+  const filteredSubmissions = submissions.filter(sub => {
+    const matchesSearch = 
+      (sub.studentName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (sub.studentClass || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (sub.assessmentTitle || '').toLowerCase().includes(searchQuery.toLowerCase());
+
+    const matchesAssessment = 
+      selectedAssessmentId === 'all' || sub.assessmentId === selectedAssessmentId;
+
+    return matchesSearch && matchesAssessment;
+  });
+
+  const activeSubmission = submissions.find(s => s.id === selectedSubId) || 
+    (filteredSubmissions.length > 0 ? filteredSubmissions[0] : (submissions[0] || null));
   const associatedAssessment = activeSubmission 
     ? assessments.find(a => a.id === activeSubmission.assessmentId)
     : null;
+
+  const handleExportCsv = () => {
+    const targetTitle = selectedAssessmentId !== 'all' 
+      ? assessments.find(a => a.id === selectedAssessmentId)?.judul || 'Asesmen'
+      : 'Semua_Asesmen';
+    generateClassSummaryCsv(filteredSubmissions, assessments, targetTitle);
+    setQuickNotice('✓ Rekap nilai kelas (.csv) berhasil diunduh untuk Excel!');
+    setTimeout(() => setQuickNotice(null), 3500);
+  };
+
+  const handleDeleteActive = () => {
+    if (!activeSubmission) return;
+    const confirmDelete = window.confirm(
+      `Apakah Anda yakin ingin menghapus lembar jawaban dari ${activeSubmission.studentName} (${activeSubmission.studentClass})? Tindakan ini tidak dapat dibatalkan.`
+    );
+    if (!confirmDelete) return;
+
+    if (onDeleteSubmission) {
+      onDeleteSubmission(activeSubmission.id);
+      setQuickNotice('✓ Jawaban peserta didik berhasil dihapus.');
+      setTimeout(() => setQuickNotice(null), 3000);
+      const remaining = submissions.filter(s => s.id !== activeSubmission.id);
+      if (remaining.length > 0) {
+        setSelectedSubId(remaining[0].id);
+      }
+    }
+  };
 
   // Count flagged students across all submissions
   const totalFlaggedStudents = submissions.filter(s => 
@@ -78,9 +136,19 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
     }
   };
 
-  const handleSavePdfDirect = () => {
+  const handleSavePdfDirect = async () => {
     if (!activeSubmission) return;
-    setIsPrintModalOpen(true);
+    try {
+      setQuickNotice('Sedang menyusun berkas PDF rapor...');
+      const fileName = `Rapor_Evaluasi_${sanitizeFilename(activeSubmission.studentName)}_${sanitizeFilename(activeSubmission.assessmentTitle || 'Asesmen')}.pdf`;
+      await generateEvaluationReportPdf(activeSubmission, associatedAssessment, fileName);
+      setQuickNotice('✓ Berkas PDF rapor evaluasi berhasil diunduh!');
+      setTimeout(() => setQuickNotice(null), 3500);
+    } catch (e) {
+      console.error(e);
+      setQuickNotice('Gagal mengunduh PDF. Membuka jendela pratinjau...');
+      setIsPrintModalOpen(true);
+    }
   };
 
   if (submissions.length === 0) {
@@ -142,6 +210,16 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
 
           <button
             type="button"
+            onClick={handleExportCsv}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 transition-colors cursor-pointer"
+            title="Unduh seluruh rekapitulasi nilai kelas dalam format spreadsheet Excel/CSV"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span>Rekap CSV (Excel)</span>
+          </button>
+
+          <button
+            type="button"
             onClick={handleSaveWordDirect}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 border border-blue-200 dark:border-blue-800 transition-colors cursor-pointer"
             title="Unduh format dokumen Microsoft Word (.doc) yang dapat diedit"
@@ -181,10 +259,51 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
         </div>
       )}
 
+      {/* Search & Filter Controls */}
+      <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs flex flex-col sm:flex-row items-center gap-3">
+        <div className="relative flex-1 w-full">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Cari nama peserta didik, kelas, atau judul asesmen..."
+            className="w-full pl-9 pr-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+            >
+              ×
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <Filter className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+          <select
+            value={selectedAssessmentId}
+            onChange={(e) => setSelectedAssessmentId(e.target.value)}
+            className="w-full sm:w-auto text-xs px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          >
+            <option value="all">Semua Asesmen ({submissions.length} Jawaban)</option>
+            {assessments.map(asm => {
+              const count = submissions.filter(s => s.assessmentId === asm.id).length;
+              return (
+                <option key={asm.id} value={asm.id}>
+                  {asm.judul} ({count})
+                </option>
+              );
+            })}
+          </select>
+        </div>
+      </div>
+
       {/* Submission Selector Tabs */}
-      {submissions.length > 1 && (
+      {filteredSubmissions.length > 0 ? (
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
-          {submissions.map((sub, idx) => {
+          {filteredSubmissions.map((sub, idx) => {
             const isSubFlagged = Object.values((sub.answers || {}) as Record<string, StudentAnswer>).some(
               (ans: StudentAnswer) => ans.copyPasteDetected || sub.evaluation?.evaluasiPerSoal?.[ans.questionId]?.integrityWarning?.isSuspicious
             );
@@ -215,6 +334,10 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
             );
           })}
         </div>
+      ) : (
+        <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800 text-center text-xs text-slate-500">
+          Tidak ditemukan lembar jawaban yang cocok dengan pencarian.
+        </div>
       )}
 
       {activeSubmission && (
@@ -237,6 +360,20 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
                   <span>Kelas: {activeSubmission.studentClass}</span>
                   <span>•</span>
                   <span>{new Date(activeSubmission.timestamp).toLocaleString('id-ID')}</span>
+                  {onDeleteSubmission && (
+                    <>
+                      <span>•</span>
+                      <button
+                        type="button"
+                        onClick={handleDeleteActive}
+                        className="text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 flex items-center gap-1 font-semibold transition-colors cursor-pointer"
+                        title="Hapus lembar jawaban peserta didik ini"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Hapus Jawaban</span>
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
 
