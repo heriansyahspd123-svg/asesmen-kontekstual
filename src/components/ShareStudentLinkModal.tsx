@@ -47,7 +47,15 @@ export const ShareStudentLinkModal: React.FC<ShareStudentLinkModalProps> = ({
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [isQrFullscreen, setIsQrFullscreen] = useState<boolean>(false);
-  const [linkMode, setLinkMode] = useState<'public' | 'current' | 'custom'>('public');
+  const [linkMode, setLinkMode] = useState<'current' | 'public' | 'custom'>(() => {
+    try {
+      const saved = localStorage.getItem('preferred_share_mode');
+      if (saved === 'public' || saved === 'current') return saved;
+    } catch {}
+    return 'current';
+  });
+  const [publicStatus, setPublicStatus] = useState<'unknown' | 'active' | 'inactive'>('unknown');
+  const [isCheckingPublic, setIsCheckingPublic] = useState<boolean>(false);
   const [teacherPhone, setTeacherPhone] = useState<string>(() => {
     try {
       return localStorage.getItem('teacher_phone_wa') || '';
@@ -71,10 +79,41 @@ export const ShareStudentLinkModal: React.FC<ShareStudentLinkModalProps> = ({
 
   const effectiveOrigin = linkMode === 'public' 
     ? publicOrigin 
-    : (linkMode === 'current' ? currentOrigin : (customOrigin.trim() || publicOrigin));
+    : (linkMode === 'current' ? currentOrigin : (customOrigin.trim() || currentOrigin));
 
   const shareUrl = assessment ? buildStudentShareUrl(assessment, effectiveOrigin) : '';
   const waText = assessment ? buildWhatsAppShareText(assessment, effectiveOrigin) : '';
+
+  // Check public ais-pre availability when modal is opened or when public mode is selected
+  useEffect(() => {
+    if (!isOpen || !publicOrigin || !publicOrigin.includes('ais-pre-')) {
+      return;
+    }
+
+    let isMounted = true;
+    setIsCheckingPublic(true);
+
+    fetch(`${publicOrigin}/api/health`, { method: 'GET', mode: 'cors' })
+      .then((res) => {
+        if (!isMounted) return;
+        if (res.ok) {
+          setPublicStatus('active');
+        } else {
+          setPublicStatus('inactive');
+        }
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setPublicStatus('inactive');
+      })
+      .finally(() => {
+        if (isMounted) setIsCheckingPublic(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, publicOrigin]);
 
   // Generate QR Code when modal opens or assessment/shareUrl changes
   useEffect(() => {
@@ -367,37 +406,17 @@ export const ShareStudentLinkModal: React.FC<ShareStudentLinkModalProps> = ({
                 className="text-[11px] text-amber-700 dark:text-amber-400 font-semibold hover:underline flex items-center gap-1 cursor-pointer"
               >
                 <HelpCircle className="w-3.5 h-3.5" />
-                <span>{showTroubleshoot ? 'Tutup Penjelasan 403' : 'Mengapa Muncul Pesan 403?'}</span>
+                <span>{showTroubleshoot ? 'Tutup Bantuan Solusi Link' : 'Panduan Error "Page not found" & "403"'}</span>
               </button>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-slate-100 dark:bg-slate-800/80 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-700">
               <button
                 type="button"
-                onClick={() => setLinkMode('public')}
-                className={`p-2.5 rounded-xl text-left text-xs transition-all cursor-pointer flex flex-col gap-0.5 ${
-                  linkMode === 'public'
-                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-bold border border-emerald-500/50'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-1.5">
-                    <span className={`w-2 h-2 rounded-full ${linkMode === 'public' ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-                    Tautan Publik Siswa (ais-pre)
-                  </span>
-                  <span className="text-[10px] bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 rounded font-semibold">
-                    Untuk Siswa
-                  </span>
-                </div>
-                <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400 pl-3.5">
-                  Bebas login akun Google (Aktif setelah klik Share di kanan atas AI Studio)
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setLinkMode('current')}
+                onClick={() => {
+                  setLinkMode('current');
+                  try { localStorage.setItem('preferred_share_mode', 'current'); } catch {}
+                }}
                 className={`p-2.5 rounded-xl text-left text-xs transition-all cursor-pointer flex flex-col gap-0.5 ${
                   linkMode === 'current'
                     ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-bold border border-emerald-500/50'
@@ -406,15 +425,45 @@ export const ShareStudentLinkModal: React.FC<ShareStudentLinkModalProps> = ({
               >
                 <div className="flex items-center justify-between">
                   <span className="flex items-center gap-1.5">
-                    <span className={`w-2 h-2 rounded-full ${linkMode === 'current' ? 'bg-amber-500' : 'bg-slate-400'}`} />
-                    Tautan Sesi Pengembang (ais-dev)
+                    <span className={`w-2.5 h-2.5 rounded-full ${linkMode === 'current' ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                    Tautan Aktif (Bisa Langsung Diuji)
                   </span>
-                  <span className="text-[10px] bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded font-semibold">
-                    Khusus Guru
+                  <span className="text-[10px] bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 rounded font-semibold">
+                    100% Aktif Sekarang
                   </span>
                 </div>
-                <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400 pl-3.5">
-                  Khusus tab laptop guru (akan 403 jika dibuka di HP siswa)
+                <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400 pl-4">
+                  Gunakan untuk uji buka langsung di tab baru atau laptop guru tanpa error 404
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setLinkMode('public');
+                  try { localStorage.setItem('preferred_share_mode', 'public'); } catch {}
+                }}
+                className={`p-2.5 rounded-xl text-left text-xs transition-all cursor-pointer flex flex-col gap-0.5 ${
+                  linkMode === 'public'
+                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-bold border border-emerald-500/50'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <span className={`w-2.5 h-2.5 rounded-full ${linkMode === 'public' ? (publicStatus === 'active' ? 'bg-emerald-500' : 'bg-amber-500') : 'bg-slate-400'}`} />
+                    Tautan Publik Bebas Akun (ais-pre)
+                  </span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
+                    publicStatus === 'active'
+                      ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+                      : 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300'
+                  }`}>
+                    {publicStatus === 'active' ? 'Publik Aktif' : 'Perlu Klik "Share"'}
+                  </span>
+                </div>
+                <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400 pl-4">
+                  Bebas login Google bagi siswa (aktif setelah klik tombol "Share" di kanan atas AI Studio)
                 </span>
               </button>
             </div>
@@ -424,18 +473,64 @@ export const ShareStudentLinkModal: React.FC<ShareStudentLinkModalProps> = ({
               <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-xs space-y-2.5">
                 <div className="flex items-center gap-2 font-bold text-amber-900 dark:text-amber-300">
                   <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span>Penjelasan Lengkap Galat: <em>"403 Itu adalah kesalahan / Anda tidak memiliki akses"</em></span>
+                  <span>Solusi Masalah Link: Mengapa Muncul <em>"Page not found"</em> atau <em>"403"</em>?</span>
                 </div>
                 <div className="space-y-2 text-[11px] text-amber-900/90 dark:text-amber-300/90 leading-relaxed">
-                  <p>
-                    1. <strong>Mengapa Muncul Pesan 403?</strong> Tautan pengembang (<code className="font-mono bg-amber-100 dark:bg-amber-900/60 px-1 rounded">ais-dev</code>) diproteksi langsung oleh Google Cloud IAM agar hanya dapat dibuka oleh akun Google developer Anda (<code className="font-mono bg-amber-100 dark:bg-amber-900/60 px-1 rounded">heriansyah.spd123@gmail.com</code>). Saat tautan tersebut dibuka di HP Android siswa, akun lain, atau peramban privat, Google Cloud otomatis menampilkan pesan: <em>"403 Itu adalah kesalahan. Kami mohon maaf, tetapi Anda tidak memiliki akses ke halaman ini."</em>
-                  </p>
-                  <p>
-                    2. <strong>Cara Praktis Membuka Akses Web Publik:</strong> Di sudut kanan atas layar Google AI Studio Anda, klik tombol <strong>"Share" (Bagikan)</strong>. Setelah tombol Share diklik, Google Cloud akan mengaktifkan domain publik (<code className="font-mono bg-amber-100 dark:bg-amber-900/60 px-1 rounded">ais-pre</code>) yang bisa dibuka siswa tanpa login.
-                  </p>
-                  <p>
-                    3. <strong>Solusi Paling Cepat Tanpa Bergantung Server Google:</strong> Cukup gunakan tombol <strong>"Unduh File .html Siswa"</strong> di kotak hitam di atas. File tersebut bisa langsung dibagikan lewat WA ke siswa dan 100% langsung bisa dibuka di peramban HP Android maupun Laptop tanpa error 403 sama sekali.
-                  </p>
+                  <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="font-bold text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
+                        <Share2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                        <span>Cara Mengaktifkan Tautan Publik (Tombol "Share" di AI Studio):</span>
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsCheckingPublic(true);
+                          fetch(`${publicOrigin}/api/health`, { method: 'GET', mode: 'cors' })
+                            .then((res) => setPublicStatus(res.ok ? 'active' : 'inactive'))
+                            .catch(() => setPublicStatus('inactive'))
+                            .finally(() => setIsCheckingPublic(false));
+                        }}
+                        disabled={isCheckingPublic}
+                        className="text-[10px] px-2 py-0.5 rounded bg-blue-200 dark:bg-blue-900 text-blue-800 dark:text-blue-200 font-semibold hover:bg-blue-300 transition-all cursor-pointer"
+                      >
+                        {isCheckingPublic ? 'Memeriksa...' : '🔄 Cek Status'}
+                      </button>
+                    </div>
+
+                    <ol className="list-decimal list-inside space-y-1.5 text-blue-900/90 dark:text-blue-200/90 leading-relaxed text-[11px]">
+                      <li>
+                        <strong>Arahkan mata Anda ke Pojok Kanan Atas browser:</strong> Di bilah menu abu-abu/hitam teratas Google AI Studio (di atas area kerja aplikasi ini).
+                      </li>
+                      <li>
+                        <strong>Klik tombol "Share" (atau ikon Bagikan):</strong> Tombol ini terletak di sebelah kanan dekat foto profil Google Anda.
+                      </li>
+                      <li>
+                        <strong>Konfirmasi & Salin Link Publik:</strong> Di jendela yang muncul, pastikan pengaturan visibilitas aktif/publik. Google Cloud akan langsung membuat wadah publik sehingga alamat <code className="font-mono bg-blue-100 dark:bg-blue-900/60 px-1 rounded">ais-pre-...</code> langsung aktif.
+                      </li>
+                    </ol>
+                  </div>
+
+                  <div className="p-2 rounded-xl bg-amber-100/70 dark:bg-amber-900/40 border border-amber-300/60 dark:border-amber-700/60">
+                    <p className="font-bold text-amber-950 dark:text-amber-200">
+                      🚨 Mengapa Muncul <em>"Error: Page not found"</em>?
+                    </p>
+                    <p className="mt-0.5 text-amber-900 dark:text-amber-300">
+                      Pesan <em>"The requested URL was not found on this server"</em> terjadi karena Google Cloud belum mempublikasikan alamat <code className="font-mono bg-white dark:bg-slate-800 px-1 rounded text-slate-800 dark:text-slate-200">ais-pre</code> sebelum tombol <strong>Share</strong> di atas ditekan.
+                    </p>
+                    <p className="mt-1 font-semibold text-emerald-800 dark:text-emerald-300">
+                      💡 Jika ingin langsung menguji tanpa repot klik Share: Pilih tab <strong>"Tautan Aktif (Bisa Langsung Diuji)"</strong> di atas, lalu klik <strong>"Uji Buka"</strong>!
+                    </p>
+                  </div>
+
+                  <div className="p-2 rounded-xl bg-white/60 dark:bg-slate-900/40 border border-amber-200 dark:border-amber-800/40">
+                    <p className="font-bold text-slate-900 dark:text-slate-200">
+                      🛡️ Solusi 100% Bebas Galat (Paling Direkomendasikan untuk Siswa):
+                    </p>
+                    <p className="mt-0.5 text-slate-700 dark:text-slate-300">
+                      Klik tombol <strong>"Unduh File .html Siswa"</strong> di kotak hitam di atas, lalu kirimkan file tersebut ke grup WhatsApp siswa. Siswa cukup klik/buka file tersebut di HP Android atau Laptop (buka dengan Chrome). Lembar soal interaktif akan langsung terbuka <strong>tanpa memerlukan server Google Cloud sama sekali, bebas error 404, dan bebas error 403</strong>!
+                    </p>
+                  </div>
                 </div>
               </div>
             )}

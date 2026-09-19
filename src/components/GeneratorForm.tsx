@@ -147,6 +147,11 @@ export const GeneratorForm: React.FC<GeneratorFormProps> = ({ onBack, onGenerate
       clearTimeout(stepTimer1);
       clearTimeout(stepTimer2);
 
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        throw new Error('Layanan AI Generator membutuhkan backend Node.js. Di hosting statis seperti Netlify, pastikan API backend aktif atau gunakan fitur buat/edit soal manual.');
+      }
+
       const data = await res.json();
 
       if (!res.ok || !data.success) {

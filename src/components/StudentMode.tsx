@@ -558,9 +558,12 @@ export const StudentMode: React.FC<StudentModeProps> = ({
         })
       });
 
-      const result = await res.json();
-      if (result.success && result.evaluation) {
-        submissionData.evaluation = result.evaluation;
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const result = await res.json();
+        if (result.success && result.evaluation) {
+          submissionData.evaluation = result.evaluation;
+        }
       }
     } catch (e) {
       console.error('Error during automatic evaluation, will proceed with submission:', e);

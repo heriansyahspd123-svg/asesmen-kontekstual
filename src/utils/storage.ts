@@ -140,7 +140,8 @@ export async function fetchAssessmentByCodeOrId(codeOrId: string): Promise<Asses
   // 2. Fetch from backend server API
   try {
     const res = await fetch(`/api/assessments/${encodeURIComponent(cleanTarget)}`);
-    if (res.ok) {
+    const contentType = res.headers.get('content-type') || '';
+    if (res.ok && contentType.includes('application/json')) {
       const data = await res.json();
       if (data.success && data.assessment) {
         // Cache to local storage
@@ -161,7 +162,8 @@ export async function fetchAssessmentByCodeOrId(codeOrId: string): Promise<Asses
 export async function syncAssessmentsWithServer(): Promise<Assessment[]> {
   try {
     const res = await fetch('/api/assessments');
-    if (res.ok) {
+    const contentType = res.headers.get('content-type') || '';
+    if (res.ok && contentType.includes('application/json')) {
       const data = await res.json();
       if (data.success && Array.isArray(data.assessments)) {
         // Merge server assessments with local
@@ -186,7 +188,8 @@ export async function syncAssessmentsWithServer(): Promise<Assessment[]> {
 export async function syncSubmissionsWithServer(): Promise<StudentSubmission[]> {
   try {
     const res = await fetch('/api/submissions');
-    if (res.ok) {
+    const contentType = res.headers.get('content-type') || '';
+    if (res.ok && contentType.includes('application/json')) {
       const data = await res.json();
       if (data.success && Array.isArray(data.submissions)) {
         const local = getSavedSubmissions();
@@ -205,9 +208,16 @@ export async function syncSubmissionsWithServer(): Promise<StudentSubmission[]> 
 }
 
 /**
+ * Helper to get the current active origin
+ */
+export function getCurrentOrigin(): string {
+  return typeof window !== 'undefined' ? window.location.origin : '';
+}
+
+/**
  * Helper to get the public, unauthenticated share origin for students.
- * In Google AI Studio on Cloud Run, 'ais-dev-' URLs are restricted to developer accounts (causing 403 Forbidden for students).
- * Replacing 'ais-dev-' with 'ais-pre-' provides the public Shared App URL that anyone on Android or Laptop can access freely.
+ * In Google AI Studio on Cloud Run, 'ais-dev-' URLs are restricted to developer accounts (causing 403 Forbidden for external students).
+ * Replacing 'ais-dev-' with 'ais-pre-' provides the public Shared App URL that anyone on Android or Laptop can access freely AFTER clicking "Share" in AI Studio.
  */
 export function getPublicShareOrigin(customBase?: string): string {
   if (customBase && customBase.trim()) {
@@ -223,8 +233,8 @@ export function getPublicShareOrigin(customBase?: string): string {
     // Ignore localStorage errors
   }
 
-  let origin = window.location.origin;
-  // Automatically convert private dev container URL to public shared container URL
+  let origin = getCurrentOrigin();
+  // Convert private dev container URL to public shared container URL
   if (origin.includes('ais-dev-')) {
     origin = origin.replace('ais-dev-', 'ais-pre-');
   }
@@ -234,11 +244,28 @@ export function getPublicShareOrigin(customBase?: string): string {
 
 /**
  * Generate a direct link for students to work on Android or Laptop.
- * Automatically resolves to the public URL to ensure students don't encounter 403 Forbidden.
+ * By default, uses the current active origin to ensure the link works immediately without 404 'Page not found' errors.
+ * If customOrigin is provided, uses that origin.
  */
 export function buildStudentShareUrl(assessment: Assessment, customOrigin?: string): string {
-  const origin = customOrigin && customOrigin.trim() ? customOrigin.trim().replace(/\/+$/, '') : getPublicShareOrigin();
-  const pathname = window.location.pathname;
+  let origin = '';
+  if (customOrigin && customOrigin.trim()) {
+    origin = customOrigin.trim().replace(/\/+$/, '');
+  } else {
+    // Check if user has an explicit preference in localStorage
+    try {
+      const preferredMode = localStorage.getItem('preferred_share_mode');
+      if (preferredMode === 'public') {
+        origin = getPublicShareOrigin();
+      } else {
+        origin = getCurrentOrigin();
+      }
+    } catch {
+      origin = getCurrentOrigin();
+    }
+  }
+
+  const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
   const code = encodeURIComponent(assessment.kodeAkses);
   return `${origin}${pathname}?view=student&code=${code}`;
 }
