@@ -354,23 +354,42 @@ export const GeneratorForm: React.FC<GeneratorFormProps> = ({ onBack, onGenerate
 
               {/* Kelas Choice */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Tingkat Kelas ({jenjang})
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center justify-between">
+                  <span>Tingkat Kelas ({jenjang})</span>
+                  <span className="text-[10px] font-bold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/70 px-2 py-0.5 rounded-md border border-sky-200 dark:border-sky-800">
+                    {currentFase} • Kelas {kelas}
+                  </span>
                 </label>
                 <div className="flex flex-wrap gap-2">
                   {jenjang === 'SD' ? (
-                    ['I', 'II', 'III', 'IV', 'V', 'VI'].map(k => (
+                    [
+                      { k: 'I', fase: 'Fase A' },
+                      { k: 'II', fase: 'Fase A' },
+                      { k: 'III', fase: 'Fase B' },
+                      { k: 'IV', fase: 'Fase B' },
+                      { k: 'V', fase: 'Fase C' },
+                      { k: 'VI', fase: 'Fase C' }
+                    ].map(({ k, fase }) => (
                       <button
                         key={k}
                         type="button"
-                        onClick={() => setKelas(k)}
-                        className={`w-10 h-10 rounded-xl font-bold text-xs border flex items-center justify-center transition-all cursor-pointer ${
+                        onClick={() => {
+                          setKelas(k);
+                          setCpFilterFase(fase);
+                        }}
+                        title={`SD Kelas ${k} (${fase}) - Klik untuk memilih`}
+                        className={`min-w-[42px] h-10 px-2 rounded-xl font-bold text-xs border flex flex-col items-center justify-center transition-all cursor-pointer ${
                           kelas === k
-                            ? 'bg-sky-600 text-white border-sky-600 shadow-sm'
+                            ? 'bg-sky-600 text-white border-sky-600 shadow-sm ring-2 ring-sky-300 dark:ring-sky-800'
                             : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
                         }`}
                       >
-                        {k}
+                        <span className="leading-tight">{k}</span>
+                        <span className={`text-[9px] font-semibold leading-none ${
+                          kelas === k ? 'text-sky-100' : 'text-slate-400 dark:text-slate-500'
+                        }`}>
+                          {fase.replace('Fase ', '')}
+                        </span>
                       </button>
                     ))
                   ) : (
@@ -378,10 +397,14 @@ export const GeneratorForm: React.FC<GeneratorFormProps> = ({ onBack, onGenerate
                       <button
                         key={k}
                         type="button"
-                        onClick={() => setKelas(k)}
+                        onClick={() => {
+                          setKelas(k);
+                          setCpFilterFase('SMP');
+                        }}
+                        title={`SMP Kelas ${k} (Fase D) - Klik untuk memilih`}
                         className={`px-4 h-10 rounded-xl font-bold text-xs border flex items-center justify-center transition-all cursor-pointer ${
                           kelas === k
-                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm ring-2 ring-indigo-300 dark:ring-indigo-800'
                             : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
                         }`}
                       >
@@ -402,9 +425,18 @@ export const GeneratorForm: React.FC<GeneratorFormProps> = ({ onBack, onGenerate
                 2. Standar Nasional Kurikulum Merdeka (Fase, CP & KKTP)
               </h3>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-                  {currentFase} ({jenjang} Kelas {kelas})
-                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCpFilterFase(currentFase);
+                    setShowCPPresets(true);
+                  }}
+                  title={`Klik untuk membuka & memfilter Katalog CP ${currentFase} (${jenjang} Kelas ${kelas})`}
+                  className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/80 hover:bg-emerald-200 dark:hover:bg-emerald-900 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
+                  <span>{currentFase} ({jenjang} Kelas {kelas})</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setShowCPPresets(!showCPPresets)}
@@ -510,17 +542,26 @@ export const GeneratorForm: React.FC<GeneratorFormProps> = ({ onBack, onGenerate
                   {/* Fase Quick Filters */}
                   <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
                     {[
-                      { id: 'SEMUA', label: 'Semua Fase' },
-                      { id: 'SD', label: 'Semua SD' },
-                      { id: 'Fase A', label: 'Fase A (Kls 1-2)' },
-                      { id: 'Fase B', label: 'Fase B (Kls 3-4)' },
-                      { id: 'Fase C', label: 'Fase C (Kls 5-6)' },
-                      { id: 'SMP', label: 'SMP (Fase D)' }
+                      { id: 'SEMUA', label: 'Semua Fase', defaultJenjang: null, defaultKelas: null },
+                      { id: 'SD', label: 'Semua SD', defaultJenjang: 'SD' as const, defaultKelas: null },
+                      { id: 'Fase A', label: 'Fase A (Kls 1-2)', defaultJenjang: 'SD' as const, defaultKelas: 'I' },
+                      { id: 'Fase B', label: 'Fase B (Kls 3-4)', defaultJenjang: 'SD' as const, defaultKelas: 'IV' },
+                      { id: 'Fase C', label: 'Fase C (Kls 5-6)', defaultJenjang: 'SD' as const, defaultKelas: 'V' },
+                      { id: 'SMP', label: 'SMP (Fase D)', defaultJenjang: 'SMP' as const, defaultKelas: 'VIII' }
                     ].map(f => (
                       <button
                         key={f.id}
                         type="button"
-                        onClick={() => setCpFilterFase(f.id)}
+                        onClick={() => {
+                          setCpFilterFase(f.id);
+                          if (f.defaultJenjang) {
+                            setJenjang(f.defaultJenjang);
+                          }
+                          if (f.defaultKelas) {
+                            setKelas(f.defaultKelas);
+                          }
+                        }}
+                        title={`Pilih ${f.label} dan sinkronkan jenjang/kelas`}
                         className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg whitespace-nowrap transition-colors cursor-pointer ${
                           cpFilterFase === f.id
                             ? 'bg-emerald-600 text-white shadow-xs'
