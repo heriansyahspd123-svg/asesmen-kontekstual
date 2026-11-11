@@ -1,0 +1,63 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile with role (teacher/admin)",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 256 },
+        "displayName": { "type": "string", "maxLength": 256 },
+        "role": { "type": "string", "enum": ["teacher", "admin"] },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["uid", "email"]
+    },
+    "Assessment": {
+      "title": "Assessment Document",
+      "description": "Contextual assessment document designed by teacher",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "kodeAkses": { "type": "string", "maxLength": 64 },
+        "judul": { "type": "string", "maxLength": 500 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "config": { "type": "object" },
+        "questions": { "type": "array" },
+        "dibuatTanggal": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "kodeAkses", "judul"]
+    },
+    "StudentSubmission": {
+      "title": "Student Submission",
+      "description": "Answer sheet and evaluation result submitted by student",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "assessmentId": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 256 },
+        "studentClass": { "type": "string", "maxLength": 128 },
+        "studentNumber": { "type": "string", "maxLength": 64 },
+        "answers": { "type": "object" },
+        "evaluation": { "type": "object" },
+        "timestamp": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "assessmentId", "studentName"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User accounts and profile info"
+    },
+    "/assessments/{assessmentId}": {
+      "schema": { "$ref": "#/entities/Assessment" },
+      "description": "Public and teacher contextual assessments"
+    },
+    "/submissions/{submissionId}": {
+      "schema": { "$ref": "#/entities/StudentSubmission" },
+      "description": "Student work and automated evaluation results"
+    }
+  }
+}

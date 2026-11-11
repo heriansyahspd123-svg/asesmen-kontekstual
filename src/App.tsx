@@ -9,6 +9,9 @@ import { TeacherGuideModal } from './components/TeacherGuideModal';
 import { PrintAssessmentModal } from './components/PrintAssessmentModal';
 import { TeacherIntegrityAuditModal } from './components/TeacherIntegrityModal';
 import { ShareStudentLinkModal } from './components/ShareStudentLinkModal';
+import { AuthModal } from './components/AuthModal';
+import { LoginPage } from './components/LoginPage';
+import { useAuth } from './context/AuthContext';
 import { Assessment, StudentSubmission, StudentAnswer } from './types';
 import { 
   getSavedAssessments, 
@@ -30,6 +33,7 @@ export default function App() {
   const [printAssessment, setPrintAssessment] = useState<Assessment | null>(null);
   const [isTeacherAuditOpen, setIsTeacherAuditOpen] = useState<boolean>(false);
   const [shareAssessment, setShareAssessment] = useState<Assessment | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
 
   // Calculate total flagged submissions for teacher badge
   const totalFlaggedCount = submissions.filter(s => 
@@ -111,6 +115,16 @@ export default function App() {
   };
 
   const activeAssessmentForEditor = assessments.find(a => a.id === selectedAssessmentId) || assessments[0];
+  const { currentUser, loading: authLoading } = useAuth();
+
+  // If user is not logged in and not explicitly in student mode, display the full Login Page first
+  if (!authLoading && !currentUser && currentView !== 'student') {
+    return (
+      <LoginPage 
+        onSuccess={() => setCurrentView('home')} 
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-100/60 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-emerald-200 dark:selection:bg-emerald-800 selection:text-emerald-950 dark:selection:text-emerald-100 transition-colors duration-150">
@@ -120,6 +134,7 @@ export default function App() {
         onNavigate={(view) => handleNavigate(view)}
         onOpenGuide={() => setIsGuideOpen(true)}
         onOpenAudit={() => setIsTeacherAuditOpen(true)}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
         flaggedCount={totalFlaggedCount}
       />
 
@@ -132,6 +147,7 @@ export default function App() {
             onNavigate={handleNavigate}
             onOpenGuide={() => setIsGuideOpen(true)}
             onOpenAudit={() => setIsTeacherAuditOpen(true)}
+            onOpenRegisterGuru={() => setIsAuthModalOpen(true)}
             assessments={assessments}
             flaggedCount={totalFlaggedCount}
             onShare={(asm) => setShareAssessment(asm)}
@@ -209,6 +225,11 @@ export default function App() {
           setShareAssessment(null);
           handleNavigate('student', id);
         }}
+      />
+
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
       />
 
       {/* Footer */}

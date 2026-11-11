@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { PenTool, UserCheck, BarChart3, HelpCircle, ArrowRight, Sparkles, CheckCircle2, ShieldAlert, Cpu, Award, FileText, ChevronRight, Copy, Check, Share2, Smartphone, Laptop, Printer } from 'lucide-react';
+import { PenTool, UserCheck, BarChart3, HelpCircle, ArrowRight, Sparkles, CheckCircle2, ShieldAlert, Cpu, Award, FileText, ChevronRight, Copy, Check, Share2, Smartphone, Laptop, Printer, UserPlus } from 'lucide-react';
 import { Assessment } from '../types';
 
 interface HomeViewProps {
   onNavigate: (view: string, assessmentId?: string) => void;
   onOpenGuide: () => void;
   onOpenAudit?: () => void;
+  onOpenRegisterGuru?: () => void;
   assessments: Assessment[];
   flaggedCount?: number;
   onShare?: (assessment: Assessment) => void;
@@ -16,6 +17,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
   onNavigate, 
   onOpenGuide, 
   onOpenAudit,
+  onOpenRegisterGuru,
   assessments,
   flaggedCount = 0,
   onShare,
@@ -106,6 +108,18 @@ export const HomeView: React.FC<HomeViewProps> = ({
                     {flaggedCount}
                   </span>
                 )}
+              </button>
+            )}
+
+            {onOpenRegisterGuru && (
+              <button
+                id="btn-home-register-guru"
+                onClick={onOpenRegisterGuru}
+                className="flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl bg-teal-600/30 hover:bg-teal-600/40 text-teal-200 hover:text-white font-semibold text-sm sm:text-base border border-teal-500/30 transition-all hover:-translate-y-0.5"
+                title="Daftarkan Akun Guru Baru untuk Rekan Guru / Guru Lain"
+              >
+                <UserPlus className="w-4 h-4 text-teal-400" />
+                <span>DAFTAR GURU BARU</span>
               </button>
             )}
 

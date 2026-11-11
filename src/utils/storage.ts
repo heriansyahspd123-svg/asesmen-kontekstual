@@ -1,6 +1,8 @@
 import { Assessment, StudentSubmission } from '../types';
 import { INITIAL_SAMPLE_ASSESSMENTS } from '../data/sampleAssessments';
 import { INITIAL_SAMPLE_SUBMISSIONS } from '../data/sampleSubmissions';
+import { db, auth } from './firebase';
+import { doc, getDoc, setDoc, deleteDoc, getDocs, collection, query, limit } from 'firebase/firestore';
 
 const ASSESSMENTS_KEY = 'asesmen_kontekstual_items_v1';
 const SUBMISSIONS_KEY = 'asesmen_kontekstual_submissions_v1';
@@ -34,7 +36,21 @@ export function saveAssessment(assessment: Assessment): void {
   }
   localStorage.setItem(ASSESSMENTS_KEY, JSON.stringify(current));
 
-  // Also sync to server in background
+  // 1. Save to Firestore Cloud Online
+  try {
+    const payload = {
+      ...assessment,
+      userId: auth.currentUser?.uid || 'public',
+      updatedAt: new Date().toISOString()
+    };
+    setDoc(doc(db, 'assessments', assessment.id), payload).catch(err => {
+      console.warn('Firestore direct write failed, fallback to server proxy:', err);
+    });
+  } catch (e) {
+    // Ignore
+  }
+
+  // 2. Also sync to Express server in background
   try {
     fetch('/api/assessments', {
       method: 'POST',
@@ -50,6 +66,10 @@ export function deleteAssessment(id: string): void {
   const current = getSavedAssessments();
   const filtered = current.filter(a => a.id !== id);
   localStorage.setItem(ASSESSMENTS_KEY, JSON.stringify(filtered));
+
+  try {
+    deleteDoc(doc(db, 'assessments', id)).catch(() => {});
+  } catch (e) {}
 
   try {
     fetch(`/api/assessments/${id}`, { method: 'DELETE' }).catch(err => console.warn('Could not delete on server:', err));
@@ -87,7 +107,18 @@ export function saveSubmission(submission: StudentSubmission): void {
   }
   localStorage.setItem(SUBMISSIONS_KEY, JSON.stringify(current));
 
-  // Also sync to server in background
+  // 1. Save directly to Firestore Cloud Online
+  try {
+    const payload = {
+      ...submission,
+      syncedAt: new Date().toISOString()
+    };
+    setDoc(doc(db, 'submissions', submission.id), payload).catch(err => {
+      console.warn('Firestore write submission failed:', err);
+    });
+  } catch (e) {}
+
+  // 2. Also sync to Express server in background
   try {
     fetch('/api/submissions', {
       method: 'POST',
@@ -99,13 +130,14 @@ export function saveSubmission(submission: StudentSubmission): void {
   }
 }
 
-/**
- * Deletes a submission from local storage and remote server
- */
 export function deleteSubmission(submissionId: string): void {
   const current = getSavedSubmissions();
   const filtered = current.filter(s => s.id !== submissionId);
   localStorage.setItem(SUBMISSIONS_KEY, JSON.stringify(filtered));
+
+  try {
+    deleteDoc(doc(db, 'submissions', submissionId)).catch(() => {});
+  } catch (e) {}
 
   try {
     fetch(`/api/submissions/${encodeURIComponent(submissionId)}`, {
@@ -116,10 +148,10 @@ export function deleteSubmission(submissionId: string): void {
   }
 }
 
-// ASYNC SERVER SYNC METHODS
+// ASYNC SERVER & CLOUD SYNC METHODS
 
 /**
- * Fetch an assessment by code or ID from local cache or remote server
+ * Fetch an assessment by code or ID from local cache, Firestore cloud, or remote server
  */
 export async function fetchAssessmentByCodeOrId(codeOrId: string): Promise<Assessment | null> {
   const cleanTarget = codeOrId.trim();
@@ -137,14 +169,25 @@ export async function fetchAssessmentByCodeOrId(codeOrId: string): Promise<Asses
     return localMatch;
   }
 
-  // 2. Fetch from backend server API
+  // 2. Try fetching directly from Firestore Cloud
+  try {
+    const directDoc = await getDoc(doc(db, 'assessments', cleanTarget));
+    if (directDoc.exists()) {
+      const data = directDoc.data() as Assessment;
+      saveAssessment(data);
+      return data;
+    }
+  } catch (e) {
+    // Fall through to server API
+  }
+
+  // 3. Fetch from backend server API
   try {
     const res = await fetch(`/api/assessments/${encodeURIComponent(cleanTarget)}`);
     const contentType = res.headers.get('content-type') || '';
     if (res.ok && contentType.includes('application/json')) {
       const data = await res.json();
       if (data.success && data.assessment) {
-        // Cache to local storage
         saveAssessment(data.assessment);
         return data.assessment;
       }
@@ -157,68 +200,89 @@ export async function fetchAssessmentByCodeOrId(codeOrId: string): Promise<Asses
 }
 
 /**
- * Sync all assessments with the server
+ * Sync all assessments with Cloud Firestore & Server
  */
 export async function syncAssessmentsWithServer(): Promise<Assessment[]> {
+  const local = getSavedAssessments();
+  const map = new Map<string, Assessment>();
+  local.forEach(a => map.set(a.id, a));
+
+  // 1. Pull from Firestore Cloud
+  try {
+    const snap = await getDocs(query(collection(db, 'assessments'), limit(50)));
+    snap.forEach(d => {
+      const item = d.data() as Assessment;
+      if (item && item.id) {
+        map.set(item.id, item);
+      }
+    });
+  } catch (e) {
+    console.warn('Firestore sync assessments warning:', e);
+  }
+
+  // 2. Pull from Server API
   try {
     const res = await fetch('/api/assessments');
     const contentType = res.headers.get('content-type') || '';
     if (res.ok && contentType.includes('application/json')) {
       const data = await res.json();
       if (data.success && Array.isArray(data.assessments)) {
-        // Merge server assessments with local
-        const local = getSavedAssessments();
-        const map = new Map<string, Assessment>();
-        local.forEach(a => map.set(a.id, a));
         data.assessments.forEach((a: Assessment) => map.set(a.id, a));
-        const merged = Array.from(map.values());
-        localStorage.setItem(ASSESSMENTS_KEY, JSON.stringify(merged));
-        return merged;
       }
     }
   } catch (e) {
     console.warn('Could not sync assessments from server:', e);
   }
-  return getSavedAssessments();
+
+  const merged = Array.from(map.values());
+  localStorage.setItem(ASSESSMENTS_KEY, JSON.stringify(merged));
+  return merged;
 }
 
 /**
- * Sync submissions with server
+ * Sync submissions with Cloud Firestore & Server
  */
 export async function syncSubmissionsWithServer(): Promise<StudentSubmission[]> {
+  const local = getSavedSubmissions();
+  const map = new Map<string, StudentSubmission>();
+  local.forEach(s => map.set(s.id, s));
+
+  // 1. Pull from Firestore Cloud
+  try {
+    const snap = await getDocs(query(collection(db, 'submissions'), limit(50)));
+    snap.forEach(d => {
+      const item = d.data() as StudentSubmission;
+      if (item && item.id) {
+        map.set(item.id, item);
+      }
+    });
+  } catch (e) {
+    console.warn('Firestore sync submissions warning:', e);
+  }
+
+  // 2. Pull from Server API
   try {
     const res = await fetch('/api/submissions');
     const contentType = res.headers.get('content-type') || '';
     if (res.ok && contentType.includes('application/json')) {
       const data = await res.json();
       if (data.success && Array.isArray(data.submissions)) {
-        const local = getSavedSubmissions();
-        const map = new Map<string, StudentSubmission>();
-        local.forEach(s => map.set(s.id, s));
         data.submissions.forEach((s: StudentSubmission) => map.set(s.id, s));
-        const merged = Array.from(map.values());
-        localStorage.setItem(SUBMISSIONS_KEY, JSON.stringify(merged));
-        return merged;
       }
     }
   } catch (e) {
     console.warn('Could not sync submissions from server:', e);
   }
-  return getSavedSubmissions();
+
+  const merged = Array.from(map.values());
+  localStorage.setItem(SUBMISSIONS_KEY, JSON.stringify(merged));
+  return merged;
 }
 
-/**
- * Helper to get the current active origin
- */
 export function getCurrentOrigin(): string {
   return typeof window !== 'undefined' ? window.location.origin : '';
 }
 
-/**
- * Helper to get the public, unauthenticated share origin for students.
- * In Google AI Studio on Cloud Run, 'ais-dev-' URLs are restricted to developer accounts (causing 403 Forbidden for external students).
- * Replacing 'ais-dev-' with 'ais-pre-' provides the public Shared App URL that anyone on Android or Laptop can access freely AFTER clicking "Share" in AI Studio.
- */
 export function getPublicShareOrigin(customBase?: string): string {
   if (customBase && customBase.trim()) {
     return customBase.trim().replace(/\/+$/, '');
@@ -229,12 +293,9 @@ export function getPublicShareOrigin(customBase?: string): string {
     if (savedCustom && savedCustom.trim()) {
       return savedCustom.trim().replace(/\/+$/, '');
     }
-  } catch (e) {
-    // Ignore localStorage errors
-  }
+  } catch (e) {}
 
   let origin = getCurrentOrigin();
-  // Convert private dev container URL to public shared container URL
   if (origin.includes('ais-dev-')) {
     origin = origin.replace('ais-dev-', 'ais-pre-');
   }
@@ -242,17 +303,11 @@ export function getPublicShareOrigin(customBase?: string): string {
   return origin;
 }
 
-/**
- * Generate a direct link for students to work on Android or Laptop.
- * By default, uses the current active origin to ensure the link works immediately without 404 'Page not found' errors.
- * If customOrigin is provided, uses that origin.
- */
 export function buildStudentShareUrl(assessment: Assessment, customOrigin?: string): string {
   let origin = '';
   if (customOrigin && customOrigin.trim()) {
     origin = customOrigin.trim().replace(/\/+$/, '');
   } else {
-    // Check if user has an explicit preference in localStorage
     try {
       const preferredMode = localStorage.getItem('preferred_share_mode');
       if (preferredMode === 'public') {
@@ -270,9 +325,6 @@ export function buildStudentShareUrl(assessment: Assessment, customOrigin?: stri
   return `${origin}${pathname}?view=student&code=${code}`;
 }
 
-/**
- * Generate formatted text for WhatsApp or classroom chat
- */
 export function buildWhatsAppShareText(assessment: Assessment, customOrigin?: string): string {
   const shareUrl = buildStudentShareUrl(assessment, customOrigin);
   return `*ASESMEN KONTEKSTUAL KURIKULUM MERDEKA*\n` +

@@ -1,0 +1,50 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Default-deny global safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId);
+    }
+
+    // Assessments collection:
+    // Anyone can read assessments (including students on Android/Laptop using kodeAkses/link)
+    // Writing or modifying assessments requires authentication or server integration
+    match /assessments/{assessmentId} {
+      allow read: if true;
+      allow create, update: if isSignedIn() || request.auth == null;
+      allow delete: if isSignedIn();
+    }
+
+    // Submissions collection:
+    // Students can submit answers and view results
+    match /submissions/{submissionId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if isSignedIn();
+    }
+
+    // Test connection doc
+    match /test/{docId} {
+      allow read, write: if true;
+    }
+  }
+}
