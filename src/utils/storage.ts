@@ -342,3 +342,122 @@ export function buildWhatsAppShareText(assessment: Assessment, customOrigin?: st
     `3. Otomatis menyimpan progres jawaban (Auto-Save) di HP/Laptop.\n\n` +
     `Selamat mengerjakan dengan teliti dan jujur! ✨`;
 }
+
+/**
+ * Unduh satu asesmen spesifik dalam format file JSON
+ */
+export function downloadAssessmentAsJSON(assessment: Assessment): void {
+  const dataStr = JSON.stringify(assessment, null, 2);
+  const blob = new Blob([dataStr], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const safeTitle = (assessment.judul || 'asesmen')
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '_')
+    .slice(0, 50);
+  a.href = url;
+  a.download = `asesmen_${safeTitle}_${assessment.kodeAkses || 'data'}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Unduh seluruh database aplikasi (Bank Soal & Jawaban Siswa) dalam format file JSON
+ */
+export function downloadAllDataBackupAsJSON(): void {
+  const assessments = getSavedAssessments();
+  const submissions = getSavedSubmissions();
+  const backupPayload = {
+    appName: 'ASESMEN KONTEKSTUAL KURIKULUM MERDEKA',
+    author: 'Heriansyah, S.Si., S.Pd., M.Pd',
+    exportedAt: new Date().toISOString(),
+    version: '1.0',
+    totalAssessments: assessments.length,
+    totalSubmissions: submissions.length,
+    assessments,
+    submissions
+  };
+
+  const dataStr = JSON.stringify(backupPayload, null, 2);
+  const blob = new Blob([dataStr], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const dateStr = new Date().toISOString().split('T')[0];
+  a.href = url;
+  a.download = `backup_asesmen_kontekstual_${dateStr}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Impor data asesmen dari file JSON manual
+ */
+export function importDataFromJSONString(jsonString: string): { success: boolean; count: number; message: string } {
+  try {
+    const parsed = JSON.parse(jsonString);
+    let importedCount = 0;
+
+    // Check if it's a full backup bundle
+    if (parsed && Array.isArray(parsed.assessments)) {
+      parsed.assessments.forEach((asm: Assessment) => {
+        if (asm && asm.id && asm.judul) {
+          saveAssessment(asm);
+          importedCount++;
+        }
+      });
+      if (Array.isArray(parsed.submissions)) {
+        parsed.submissions.forEach((sub: StudentSubmission) => {
+          if (sub && sub.id) {
+            saveSubmission(sub);
+          }
+        });
+      }
+      return {
+        success: true,
+        count: importedCount,
+        message: `Berhasil mengimpor ${importedCount} instrumen asesmen dan ${parsed.submissions?.length || 0} lembar jawaban siswa.`
+      };
+    }
+
+    // Check if it's a list of assessments
+    if (Array.isArray(parsed)) {
+      parsed.forEach((asm: Assessment) => {
+        if (asm && asm.id && asm.judul) {
+          saveAssessment(asm);
+          importedCount++;
+        }
+      });
+      return {
+        success: true,
+        count: importedCount,
+        message: `Berhasil mengimpor ${importedCount} instrumen asesmen.`
+      };
+    }
+
+    // Check if it's a single assessment object
+    if (parsed && parsed.id && parsed.judul && Array.isArray(parsed.questions)) {
+      saveAssessment(parsed as Assessment);
+      return {
+        success: true,
+        count: 1,
+        message: `Berhasil mengimpor asesmen "${parsed.judul}".`
+      };
+    }
+
+    return {
+      success: false,
+      count: 0,
+      message: 'Format file JSON tidak sesuai struktur instrumen Asesmen Kontekstual.'
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      count: 0,
+      message: 'Gagal membaca file JSON: ' + (err.message || 'Format tidak valid')
+    };
+  }
+}

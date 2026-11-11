@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import { Assessment, Question, RubrikPenilaian, VisualisasiGrafik, AssessmentConfig } from '../types';
 import { ShareStudentLinkModal } from './ShareStudentLinkModal';
-import { buildStudentShareUrl } from '../utils/storage';
+import { buildStudentShareUrl, downloadAssessmentAsJSON } from '../utils/storage';
 import { generateInteractiveHtmlAssessment } from '../utils/exportInteractiveHtml';
 import { DataChartViewer } from './DataChartViewer';
 
@@ -432,6 +432,16 @@ export const AssessmentEditor: React.FC<AssessmentEditorProps> = ({
           >
             <Printer className="w-3.5 h-3.5" />
             <span>Cetak / PDF</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => downloadAssessmentAsJSON(currentAssessment)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition-colors cursor-pointer"
+            title="Unduh seluruh instrumen soal ini dalam file JSON"
+          >
+            <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span>Unduh JSON</span>
           </button>
 
           <button

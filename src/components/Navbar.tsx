@@ -13,7 +13,10 @@ import {
   LogOut, 
   User, 
   CloudCheck,
-  Cloud
+  Cloud,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Menu
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
@@ -25,6 +28,8 @@ interface NavbarProps {
   onOpenAudit?: () => void;
   onOpenAuth: () => void;
   flaggedCount?: number;
+  isSidebarOpen?: boolean;
+  onToggleSidebar?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ 
@@ -33,37 +38,56 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenGuide,
   onOpenAudit,
   onOpenAuth,
-  flaggedCount = 0
+  flaggedCount = 0,
+  isSidebarOpen = true,
+  onToggleSidebar
 }) => {
   const { theme, toggleTheme } = useTheme();
   const { currentUser, userProfile, logout } = useAuth();
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 transition-colors">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          {/* Brand Logo & Title */}
-          <div 
-            onClick={() => onNavigate('home')} 
-            className="flex items-center gap-3 cursor-pointer group select-none"
-            id="nav-brand"
-          >
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 flex items-center justify-center text-white shadow-sm shadow-emerald-200 dark:shadow-emerald-950/50 group-hover:scale-105 transition-transform">
-              <BookOpen className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-slate-900 dark:text-white tracking-tight text-base sm:text-lg">
-                  ASESMEN KONTEKSTUAL
-                </span>
-                <span className="hidden md:inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                  <Sparkles className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                  Open Book
-                </span>
+          {/* Brand Logo & Title with Flexible Sidebar Toggle */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            {onToggleSidebar && (
+              <button
+                type="button"
+                onClick={onToggleSidebar}
+                title={isSidebarOpen ? 'Tutup Panel Menu Sidebar' : 'Buka Panel Menu Sidebar'}
+                className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-all cursor-pointer flex items-center justify-center shrink-0 hover:scale-105 active:scale-95"
+              >
+                {isSidebarOpen ? (
+                  <PanelLeftClose className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                ) : (
+                  <PanelLeftOpen className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                )}
+              </button>
+            )}
+
+            <div 
+              onClick={() => onNavigate('home')} 
+              className="flex items-center gap-2.5 sm:gap-3 cursor-pointer group select-none"
+              id="nav-brand"
+            >
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 flex items-center justify-center text-white shadow-sm shadow-emerald-200 dark:shadow-emerald-950/50 group-hover:scale-105 transition-transform">
+                <BookOpen className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 hidden sm:block">
-                SD & SMP • Karya Heriansyah, S.Si., S.Pd., M.Pd
-              </p>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-extrabold text-slate-900 dark:text-white tracking-tight text-sm sm:text-base lg:text-lg">
+                    ASESMEN KONTEKSTUAL
+                  </span>
+                  <span className="hidden lg:inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                    <Sparkles className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                    Open Book
+                  </span>
+                </div>
+                <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 hidden sm:block">
+                  SD & SMP • Karya Heriansyah, S.Si., S.Pd., M.Pd
+                </p>
+              </div>
             </div>
           </div>
 

@@ -11,6 +11,7 @@ import { TeacherIntegrityAuditModal } from './components/TeacherIntegrityModal';
 import { ShareStudentLinkModal } from './components/ShareStudentLinkModal';
 import { AuthModal } from './components/AuthModal';
 import { LoginPage } from './components/LoginPage';
+import { AppSidebar } from './components/AppSidebar';
 import { useAuth } from './context/AuthContext';
 import { Assessment, StudentSubmission, StudentAnswer } from './types';
 import { 
@@ -25,6 +26,7 @@ import {
 
 export default function App() {
   const [currentView, setCurrentView] = useState<string>('home');
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [submissions, setSubmissions] = useState<StudentSubmission[]>([]);
   const [selectedAssessmentId, setSelectedAssessmentId] = useState<string | undefined>(undefined);
@@ -128,20 +130,37 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100/60 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-emerald-200 dark:selection:bg-emerald-800 selection:text-emerald-950 dark:selection:text-emerald-100 transition-colors duration-150">
-      {/* Top Navigation */}
-      <Navbar
+      {/* Collapsible Left Sidebar */}
+      <AppSidebar
         currentView={currentView}
-        onNavigate={(view) => handleNavigate(view)}
+        onNavigate={(view, asmId) => handleNavigate(view, asmId)}
         onOpenGuide={() => setIsGuideOpen(true)}
         onOpenAudit={() => setIsTeacherAuditOpen(true)}
-        onOpenAuth={() => setIsAuthModalOpen(true)}
+        onOpenRegisterGuru={() => setIsAuthModalOpen(true)}
+        assessments={assessments}
         flaggedCount={totalFlaggedCount}
+        isOpen={isSidebarOpen}
+        onToggle={() => setIsSidebarOpen(prev => !prev)}
       />
 
+      {/* Main App Container that shifts smoothly when sidebar opens/closes */}
+      <div className={`flex flex-col min-h-screen transition-all duration-300 ease-in-out ${
+        isSidebarOpen ? 'md:pl-64 lg:pl-72' : 'md:pl-16'
+      }`}>
+        {/* Top Navigation */}
+        <Navbar
+          currentView={currentView}
+          onNavigate={(view) => handleNavigate(view)}
+          onOpenGuide={() => setIsGuideOpen(true)}
+          onOpenAudit={() => setIsTeacherAuditOpen(true)}
+          onOpenAuth={() => setIsAuthModalOpen(true)}
+          flaggedCount={totalFlaggedCount}
+          isSidebarOpen={isSidebarOpen}
+          onToggleSidebar={() => setIsSidebarOpen(prev => !prev)}
+        />
 
-
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-8">
+        {/* Main Content Area */}
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-8">
         {currentView === 'home' && (
           <HomeView
             onNavigate={handleNavigate}
@@ -253,6 +272,7 @@ export default function App() {
           </div>
         </div>
       </footer>
+      </div>
     </div>
   );
 }

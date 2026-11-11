@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { PenTool, UserCheck, BarChart3, HelpCircle, ArrowRight, Sparkles, CheckCircle2, ShieldAlert, Cpu, Award, FileText, ChevronRight, Copy, Check, Share2, Smartphone, Laptop, Printer, UserPlus } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { PenTool, UserCheck, BarChart3, HelpCircle, ArrowRight, Sparkles, CheckCircle2, ShieldAlert, Cpu, Award, FileText, ChevronRight, Copy, Check, Share2, Smartphone, Laptop, Printer, UserPlus, Download, Upload, Database } from 'lucide-react';
 import { Assessment } from '../types';
+import { downloadAssessmentAsJSON, downloadAllDataBackupAsJSON, importDataFromJSONString } from '../utils/storage';
 
 interface HomeViewProps {
   onNavigate: (view: string, assessmentId?: string) => void;
@@ -24,12 +25,47 @@ export const HomeView: React.FC<HomeViewProps> = ({
   onPrint
 }) => {
   const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
+  const [downloadFeedback, setDownloadFeedback] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleCopyCode = (e: React.MouseEvent, asmId: string, code: string) => {
     e.stopPropagation();
     navigator.clipboard.writeText(code);
     setCopiedCodeId(asmId);
     setTimeout(() => setCopiedCodeId(null), 2000);
+  };
+
+  const handleBackupAllJSON = () => {
+    downloadAllDataBackupAsJSON();
+    setDownloadFeedback('File backup JSON seluruh data berhasil diunduh!');
+    setTimeout(() => setDownloadFeedback(null), 3000);
+  };
+
+  const handleDownloadSingleJSON = (asm: Assessment) => {
+    downloadAssessmentAsJSON(asm);
+    setDownloadFeedback(`File JSON asesmen "${asm.judul}" berhasil diunduh!`);
+    setTimeout(() => setDownloadFeedback(null), 3000);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const content = evt.target?.result as string;
+      if (content) {
+        const res = importDataFromJSONString(content);
+        if (res.success) {
+          alert(`Sukses: ${res.message}`);
+          window.location.reload();
+        } else {
+          alert(`Gagal: ${res.message}`);
+        }
+      }
+    };
+    reader.readAsText(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
   return (
     <div className="space-y-12 pb-16">
@@ -183,22 +219,62 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
       {/* Ready-to-Test Assessments Cards */}
       <section className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-              Bank Asesmen Kontekstual Aktif
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Database className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+              <span>Bank Asesmen Kontekstual Aktif</span>
             </h2>
             <p className="text-sm text-slate-500 dark:text-slate-400">
-              Pilih untuk mencoba langsung sebagai siswa atau tinjau dan edit struktur soal.
+              Pilih untuk mencoba langsung sebagai siswa, tinjau/edit, atau unduh cadangan file JSON manual.
             </p>
           </div>
-          <button
-            onClick={() => onNavigate('create')}
-            className="hidden sm:flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800/60 transition-colors cursor-pointer"
-          >
-            + Buat Asesmen Baru
-          </button>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Hidden File Input for JSON Restore */}
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              accept=".json" 
+              onChange={handleFileChange} 
+              className="hidden" 
+            />
+
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
+              title="Unggah / Pulihkan data dari file JSON komputer"
+            >
+              <Upload className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+              <span>Impor JSON</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleBackupAllJSON}
+              className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition-colors shadow-2xs cursor-pointer"
+              title="Unduh seluruh data asesmen dan hasil siswa dalam 1 file JSON"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>Unduh Semua (JSON)</span>
+            </button>
+
+            <button
+              onClick={() => onNavigate('create')}
+              className="flex items-center gap-1.5 text-xs font-bold text-white px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 transition-colors shadow-xs cursor-pointer"
+            >
+              + Buat Asesmen Baru
+            </button>
+          </div>
         </div>
+
+        {downloadFeedback && (
+          <div className="p-3 rounded-xl bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-300 dark:border-emerald-800 text-xs font-semibold text-emerald-900 dark:text-emerald-200 flex items-center gap-2 animate-in fade-in">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <span>{downloadFeedback}</span>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {assessments.map((asm) => (
@@ -288,6 +364,16 @@ export const HomeView: React.FC<HomeViewProps> = ({
                       <span>Bagikan Link</span>
                     </button>
                   )}
+
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadSingleJSON(asm)}
+                    title="Unduh file JSON instrumen asesmen ini secara manual"
+                    className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                    <span>JSON</span>
+                  </button>
                 </div>
 
                 <button
